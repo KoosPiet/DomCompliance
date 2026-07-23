@@ -1,0 +1,58 @@
+# =============================================================================
+# LabourMate — local full-stack via Docker Compose
+#   docker compose up --build
+#
+# Provides Postgres, runs migrations + seed, then starts the app on :3000.
+# Secrets (AUTH_SECRET, ENCRYPTION_KEY, integrations) are read from `.env`;
+# DATABASE_URL/DIRECT_URL are overridden here to point at the bundled DB.
+# =============================================================================
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: labourmate
+      POSTGRES_PASSWORD: labourmate
+      POSTGRES_DB: labourmate
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U labourmate"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      target: builder
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://labourmate:labourmate@db:5432/labourmate
+      DIRECT_URL: postgresql://labourmate:labourmate@db:5432/labourmate
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed"
+
+  web:
+    build:
+      context: .
+      target: runner
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://labourmate:labourmate@db:5432/labourmate
+      DIRECT_URL: postgresql://labourmate:labourmate@db:5432/labourmate
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:

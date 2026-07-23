@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="LabourMate">
+  <rect width="512" height="512" fill="#0d9488"/>
+  <path d="M256 120 152 160v104c0 84 58 151 104 171 46-20 104-87 104-171V160L256 120Z" fill="#ffffff"/>
+  <path d="M212 266l34 34 74-78" fill="none" stroke="#0d9488" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

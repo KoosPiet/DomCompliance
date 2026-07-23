@@ -1,0 +1,990 @@
+// =============================================================================
+// LabourMate — Prisma schema
+// South African Domestic Worker Compliance Platform
+//
+// Conventions:
+//   • UUID primary keys (native pg `uuid` type) on every table.
+//   • Soft deletes via `deletedAt` on user-owned domain tables.
+//   • Audit columns (`createdAt`, `updatedAt`) everywhere; a dedicated
+//     `AuditLog` captures actor + before/after for sensitive mutations.
+//   • Monetary values stored as Decimal(12,2) in ZAR (never floats).
+//   • Sensitive PII (ID number, passport, bank account) is stored
+//     ENCRYPTED at the application layer (AES-256-GCM) — the columns
+//     below hold ciphertext, never plaintext. See src/lib/crypto/pii.ts.
+//   • Table names mapped to snake_case for a clean, DBA-friendly schema.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Supabase: pooled connection for the app, direct connection for migrations.
+  directUrl = env("DIRECT_URL")
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum UserRole {
+  OWNER // Homeowner / employer (default)
+  ADMIN // Platform administrator
+  SUPPORT // Support staff (limited admin)
+}
+
+enum SubscriptionPlan {
+  FREE_TRIAL
+  PREMIUM_MONTHLY
+  PREMIUM_ANNUAL
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum Occupation {
+  DOMESTIC_WORKER
+  GARDENER
+  NANNY
+  CAREGIVER
+  DRIVER
+  OTHER
+}
+
+enum EmploymentStatus {
+  ACTIVE
+  ON_LEAVE
+  SUSPENDED
+  TERMINATED
+}
+
+enum PayFrequency {
+  MONTHLY
+  FORTNIGHTLY
+  WEEKLY
+}
+
+enum ContractStatus {
+  DRAFT
+  PENDING_SIGNATURE
+  SIGNED
+  ARCHIVED
+}
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  FAMILY_RESPONSIBILITY
+  MATERNITY
+  UNPAID
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELED
+}
+
+enum LeaveLedgerType {
+  ACCRUAL
+  TAKEN
+  ADJUSTMENT
+  RESET
+}
+
+enum DocumentType {
+  CONTRACT
+  PAYSLIP
+  WARNING
+  PERFORMANCE_REVIEW
+  ID_DOCUMENT
+  BANK_DETAILS
+  INVOICE
+  OTHER
+}
+
+enum ReminderType {
+  GENERATE_PAYSLIP
+  PAY_SALARY
+  SUBMIT_UIF
+  SALARY_REVIEW
+  CONTRACT_RENEWAL
+  CUSTOM
+}
+
+enum ReminderFrequency {
+  ONCE
+  MONTHLY
+  ANNUALLY
+}
+
+enum ReminderStatus {
+  PENDING
+  SENT
+  COMPLETED
+  DISMISSED
+}
+
+enum PayslipStatus {
+  DRAFT
+  FINALIZED
+}
+
+enum NotificationChannel {
+  EMAIL
+  WHATSAPP
+  DASHBOARD
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  OVERDUE
+  VOID
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  NETCASH
+}
+
+enum ComplianceRating {
+  RED
+  ORANGE
+  GREEN
+}
+
+enum ComplianceSource {
+  LANDING
+  VIRAL
+  DASHBOARD
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
+  LOGIN
+  LOGOUT
+  EXPORT
+  SIGN
+  SEND
+  PAYMENT
+}
+
+enum WhatsAppStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+// =============================================================================
+// AUTHENTICATION (Auth.js v5 + credentials)
+// =============================================================================
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String? // null for OAuth-only accounts
+  name          String?
+  phone         String?
+  image         String?
+  role          UserRole  @default(OWNER)
+
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  accounts            Account[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+  employerProfile     EmployerProfile?
+  employees           Employee[]
+  contracts           EmploymentContract[]
+  payslips            Payslip[]
+  leaveRequests       LeaveRequest[]
+  documents           Document[]
+  reminders           Reminder[]
+  subscription        Subscription?
+  invoices            Invoice[]
+  payments            Payment[]
+  notifications       Notification[]
+  whatsappMessages    WhatsAppMessage[]
+  complianceChecks    ComplianceAssessment[]
+  supportTickets      SupportTicket[]         @relation("TicketRequester")
+  assignedTickets     SupportTicket[]         @relation("TicketAssignee")
+  ticketMessages      TicketMessage[]
+  auditLogs           AuditLog[]              @relation("AuditActor")
+
+  @@index([role])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(uuid()) @db.Uuid
+  userId            String  @db.Uuid
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  sessionToken String   @unique
+  userId       String   @db.Uuid
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  tokenHash String   @unique // store a hash of the token, never the token itself
+  expires   DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// =============================================================================
+// EMPLOYER PROFILE (onboarding)
+// =============================================================================
+
+model EmployerProfile {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @db.Uuid
+
+  employerName   String // legal name used on contracts & payslips
+  idNumber       String? // employer SA ID (encrypted)
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  province       String?
+  postalCode     String?
+  phone          String?
+  alternateEmail String?
+
+  uifReferenceNumber String?
+  sarsReference      String?
+
+  onboardingCompletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("employer_profiles")
+}
+
+// =============================================================================
+// EMPLOYEES (domestic workers)
+// =============================================================================
+
+model Employee {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid // owning employer
+
+  firstName String
+  lastName  String
+
+  // Identity (encrypted at rest)
+  idNumber       String?
+  passportNumber String?
+
+  // Contact
+  phone    String?
+  whatsapp String?
+  email    String?
+
+  // Address
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  province     String?
+  postalCode   String?
+
+  // Employment
+  occupation      Occupation
+  otherOccupation String?
+  status          EmploymentStatus @default(ACTIVE)
+  startDate       DateTime
+  endDate         DateTime?
+
+  // Remuneration
+  salary       Decimal      @db.Decimal(12, 2)
+  payFrequency PayFrequency @default(MONTHLY)
+
+  // Schedule
+  workingDaysPerWeek Int      @default(5)
+  ordinaryHoursDay   Decimal  @default(9) @db.Decimal(4, 2)
+  scheduleNote       String? // free text, e.g. "Mon–Fri 08:00–17:00"
+
+  // Banking (account number encrypted)
+  bankName          String?
+  bankAccountHolder String?
+  bankAccountNumber String?
+  bankBranchCode    String?
+  bankAccountType   String?
+
+  // Emergency contact
+  emergencyName         String?
+  emergencyPhone        String?
+  emergencyRelationship String?
+
+  notes String? @db.Text
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contracts     EmploymentContract[]
+  payslips      Payslip[]
+  leaveBalances LeaveBalance[]
+  leaveRequests LeaveRequest[]
+  leaveLedger   LeaveLedgerEntry[]
+  documents     Document[]
+  reminders     Reminder[]
+  notifications Notification[]
+  whatsapp_msgs WhatsAppMessage[]
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([deletedAt])
+  @@map("employees")
+}
+
+// =============================================================================
+// EMPLOYMENT CONTRACTS
+// =============================================================================
+
+model EmploymentContract {
+  id             String         @id @default(uuid()) @db.Uuid
+  userId         String         @db.Uuid
+  employeeId     String         @db.Uuid
+  contractNumber String         @unique
+  status         ContractStatus @default(DRAFT)
+
+  effectiveDate DateTime
+  endDate       DateTime? // for fixed-term contracts
+
+  // Snapshot of terms at generation time
+  salary             Decimal      @db.Decimal(12, 2)
+  payFrequency       PayFrequency
+  ordinaryHoursWeek  Decimal      @db.Decimal(5, 2)
+  workingDaysPerWeek Int
+  annualLeaveDays    Int          @default(15)
+  sickLeaveDays      Int          @default(30) // per 36-month cycle (BCEA)
+  noticePeriodDays   Int          @default(28)
+  probationMonths    Int          @default(3)
+
+  includeUif   Boolean @default(true)
+  includePopia Boolean @default(true)
+
+  // Full generated clause set (for reproducible PDFs / future AI review)
+  terms Json?
+
+  // Digital signatures
+  employerSignatureName String?
+  employerSignedAt      DateTime?
+  employerSignatureData String?   @db.Text // data URL of drawn signature
+  employeeSignatureName String?
+  employeeSignedAt      DateTime?
+  employeeSignatureData String?   @db.Text
+  signatureIpAddress    String?
+
+  documentId   String? @unique @db.Uuid
+  pdfStorageKey String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employee Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  document Document? @relation(fields: [documentId], references: [id])
+
+  @@index([userId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("employment_contracts")
+}
+
+// =============================================================================
+// PAYSLIPS
+// =============================================================================
+
+model Payslip {
+  id            String        @id @default(uuid()) @db.Uuid
+  userId        String        @db.Uuid
+  employeeId    String        @db.Uuid
+  payslipNumber String        @unique
+  status        PayslipStatus @default(DRAFT)
+
+  periodMonth Int // 1-12
+  periodYear  Int
+  periodStart DateTime
+  periodEnd   DateTime
+  payDate     DateTime
+
+  // Earnings
+  basicSalary   Decimal @db.Decimal(12, 2)
+  overtime      Decimal @default(0) @db.Decimal(12, 2)
+  allowances    Decimal @default(0) @db.Decimal(12, 2)
+  bonuses       Decimal @default(0) @db.Decimal(12, 2)
+  otherEarnings Decimal @default(0) @db.Decimal(12, 2)
+  grossEarnings Decimal @db.Decimal(12, 2)
+
+  // Deductions
+  uifEmployee     Decimal @default(0) @db.Decimal(12, 2)
+  paye            Decimal @default(0) @db.Decimal(12, 2)
+  otherDeductions Decimal @default(0) @db.Decimal(12, 2)
+  totalDeductions Decimal @db.Decimal(12, 2)
+
+  // Employer contribution (informational)
+  uifEmployer Decimal @default(0) @db.Decimal(12, 2)
+
+  netPay Decimal @db.Decimal(12, 2)
+
+  notes String? @db.Text
+
+  documentId    String? @unique @db.Uuid
+  pdfStorageKey String?
+
+  emailSentAt    DateTime?
+  whatsappSentAt DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employee Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  document Document? @relation(fields: [documentId], references: [id])
+
+  @@unique([employeeId, periodYear, periodMonth])
+  @@index([userId])
+  @@index([employeeId])
+  @@index([periodYear, periodMonth])
+  @@index([deletedAt])
+  @@map("payslips")
+}
+
+// =============================================================================
+// LEAVE MANAGEMENT
+// =============================================================================
+
+model LeaveBalance {
+  id         String    @id @default(uuid()) @db.Uuid
+  employeeId String    @db.Uuid
+  leaveType  LeaveType
+  cycleStart DateTime
+  cycleEnd   DateTime
+
+  entitledDays Decimal @default(0) @db.Decimal(6, 2)
+  accruedDays  Decimal @default(0) @db.Decimal(6, 2)
+  takenDays    Decimal @default(0) @db.Decimal(6, 2)
+  balanceDays  Decimal @default(0) @db.Decimal(6, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, leaveType, cycleStart])
+  @@index([employeeId])
+  @@map("leave_balances")
+}
+
+model LeaveRequest {
+  id         String             @id @default(uuid()) @db.Uuid
+  userId     String             @db.Uuid
+  employeeId String             @db.Uuid
+  leaveType  LeaveType
+  status     LeaveRequestStatus @default(APPROVED)
+
+  startDate DateTime
+  endDate   DateTime
+  days      Decimal  @db.Decimal(6, 2)
+  reason    String?  @db.Text
+
+  approvedAt DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employee Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  ledger   LeaveLedgerEntry[]
+
+  @@index([userId])
+  @@index([employeeId])
+  @@index([status])
+  @@map("leave_requests")
+}
+
+// Immutable ledger of leave accruals / usage for audit-grade balances.
+model LeaveLedgerEntry {
+  id             String          @id @default(uuid()) @db.Uuid
+  employeeId     String          @db.Uuid
+  leaveType      LeaveType
+  type           LeaveLedgerType
+  days           Decimal         @db.Decimal(6, 2) // +accrual / -taken
+  effectiveDate  DateTime
+  note           String?
+  leaveRequestId String?         @db.Uuid
+
+  createdAt DateTime @default(now())
+
+  employee     Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveRequest LeaveRequest? @relation(fields: [leaveRequestId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, leaveType])
+  @@map("leave_ledger_entries")
+}
+
+// =============================================================================
+// DOCUMENT VAULT
+// =============================================================================
+
+model Document {
+  id         String       @id @default(uuid()) @db.Uuid
+  userId     String       @db.Uuid
+  employeeId String?      @db.Uuid
+  type       DocumentType
+  title      String
+  description String?
+
+  fileName   String
+  mimeType   String
+  sizeBytes  Int
+  storageKey String // Supabase Storage object path
+  checksum   String? // sha256 of the file
+
+  tags       String[] @default([])
+  searchText String?  @db.Text // extracted / indexable content
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  contract EmploymentContract?
+  payslip  Payslip?
+
+  @@index([userId])
+  @@index([employeeId])
+  @@index([type])
+  @@index([deletedAt])
+  @@map("documents")
+}
+
+// =============================================================================
+// REMINDERS
+// =============================================================================
+
+model Reminder {
+  id         String            @id @default(uuid()) @db.Uuid
+  userId     String            @db.Uuid
+  employeeId String?           @db.Uuid
+  type       ReminderType
+  frequency  ReminderFrequency @default(MONTHLY)
+  status     ReminderStatus    @default(PENDING)
+
+  title       String
+  description String?
+
+  dueDate     DateTime
+  nextRunAt   DateTime?
+  completedAt DateTime?
+
+  channelEmail    Boolean @default(true)
+  channelWhatsapp Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status, nextRunAt])
+  @@index([deletedAt])
+  @@map("reminders")
+}
+
+// =============================================================================
+// SUBSCRIPTIONS & BILLING (Netcash)
+// =============================================================================
+
+model Subscription {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @db.Uuid
+
+  plan   SubscriptionPlan   @default(FREE_TRIAL)
+  status SubscriptionStatus @default(TRIALING)
+
+  trialEndsAt        DateTime?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean   @default(false)
+  canceledAt         DateTime?
+
+  priceZarCents Int  @default(0)
+  employeeLimit Int? @default(1) // null = unlimited
+  payslipLimit  Int? @default(1) // null = unlimited
+
+  // Netcash references
+  netcashAccountRef      String?
+  netcashSubscriptionRef String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoices Invoice[]
+  payments Payment[]
+
+  @@index([status])
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @db.Uuid
+  subscriptionId String?       @db.Uuid
+  invoiceNumber  String        @unique
+  status         InvoiceStatus @default(ISSUED)
+
+  amountZarCents Int
+  vatZarCents    Int @default(0)
+  totalZarCents  Int
+
+  periodStart DateTime?
+  periodEnd   DateTime?
+  issuedAt    DateTime  @default(now())
+  dueAt       DateTime?
+  paidAt      DateTime?
+
+  pdfStorageKey String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  payments     Payment[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("invoices")
+}
+
+model Payment {
+  id             String          @id @default(uuid()) @db.Uuid
+  userId         String          @db.Uuid
+  invoiceId      String?         @db.Uuid
+  subscriptionId String?         @db.Uuid
+  provider       PaymentProvider @default(NETCASH)
+  status         PaymentStatus   @default(PENDING)
+
+  providerReference String?
+  amountZarCents    Int
+  method            String?
+  rawPayload        Json?
+  processedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoice      Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([providerReference])
+  @@map("payments")
+}
+
+// =============================================================================
+// COMPLIANCE CHECK (lead generator + viral tool)
+// =============================================================================
+
+model ComplianceAssessment {
+  id     String  @id @default(uuid()) @db.Uuid
+  userId String? @db.Uuid // null for anonymous leads
+  leadId String? @db.Uuid
+
+  source    ComplianceSource @default(LANDING)
+  answers   Json // { hasWorker: bool, hasContract: bool, ... }
+  score     Int // 0-100
+  rating    ComplianceRating
+  riskFlags String[]         @default([])
+
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  lead Lead? @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([source])
+  @@map("compliance_assessments")
+}
+
+model Lead {
+  id              String  @id @default(uuid()) @db.Uuid
+  name            String?
+  email           String
+  phone           String?
+  source          ComplianceSource @default(VIRAL)
+  complianceScore Int?
+  converted       Boolean          @default(false)
+  convertedUserId String?          @db.Uuid
+  utm             Json?
+  ipAddress       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessments ComplianceAssessment[]
+
+  @@index([email])
+  @@index([converted])
+  @@map("leads")
+}
+
+// =============================================================================
+// NOTIFICATIONS & MESSAGING
+// =============================================================================
+
+model Notification {
+  id         String              @id @default(uuid()) @db.Uuid
+  userId     String              @db.Uuid
+  employeeId String?             @db.Uuid
+  reminderId String?             @db.Uuid
+  channel    NotificationChannel
+  status     NotificationStatus  @default(PENDING)
+
+  type     String
+  title    String
+  body     String   @db.Text
+  metadata Json?
+
+  sentAt DateTime?
+  readAt DateTime?
+  error  String?
+
+  createdAt DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model WhatsAppMessage {
+  id         String         @id @default(uuid()) @db.Uuid
+  userId     String         @db.Uuid
+  employeeId String?        @db.Uuid
+  status     WhatsAppStatus @default(QUEUED)
+
+  toNumber     String
+  templateName String?
+  body         String? @db.Text
+  mediaUrl     String?
+
+  providerMessageId String?
+  payslipId         String? @db.Uuid
+  documentId        String? @db.Uuid
+
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  error       String?
+
+  createdAt DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([providerMessageId])
+  @@map("whatsapp_messages")
+}
+
+// =============================================================================
+// SUPPORT (admin panel)
+// =============================================================================
+
+model SupportTicket {
+  id           String         @id @default(uuid()) @db.Uuid
+  userId       String         @db.Uuid
+  assignedToId String?        @db.Uuid
+  status       TicketStatus   @default(OPEN)
+  priority     TicketPriority @default(MEDIUM)
+
+  subject  String
+  category String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user       User            @relation("TicketRequester", fields: [userId], references: [id], onDelete: Cascade)
+  assignedTo User?           @relation("TicketAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  messages   TicketMessage[]
+
+  @@index([status])
+  @@index([userId])
+  @@map("support_tickets")
+}
+
+model TicketMessage {
+  id       String  @id @default(uuid()) @db.Uuid
+  ticketId String  @db.Uuid
+  authorId String  @db.Uuid
+  body     String  @db.Text
+  isStaff  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("ticket_messages")
+}
+
+// =============================================================================
+// AUDIT & WEBHOOK INFRASTRUCTURE
+// =============================================================================
+
+model AuditLog {
+  id          String      @id @default(uuid()) @db.Uuid
+  actorId     String?     @db.Uuid
+  actorEmail  String?
+  action      AuditAction
+  entityType  String
+  entityId    String?
+  description String?
+  before      Json?
+  after       Json?
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// Idempotency + traceability for inbound provider webhooks (Netcash, Meta).
+model WebhookEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  provider    String // "netcash" | "meta_whatsapp"
+  eventId     String // provider's unique event id
+  type        String?
+  payload     Json
+  processedAt DateTime?
+  error       String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([provider, eventId])
+  @@index([provider, processedAt])
+  @@map("webhook_events")
+}
