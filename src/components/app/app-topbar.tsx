@@ -2,20 +2,16 @@
 
 import Link from "next/link";
 import {
-  BellRing,
-  CalendarDays,
   CreditCard,
-  LayoutDashboard,
   LogOut,
-  ReceiptText,
   ShieldAlert,
   ShieldCheck,
   UserRound,
-  Users,
-  Vault,
 } from "lucide-react";
 import type { UserRole } from "@prisma/client";
 import { Logo } from "@/components/brand/logo";
+import { MobileNav } from "@/components/app/mobile-nav";
+import { NAV_ITEMS } from "@/components/app/nav-items";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,51 +49,20 @@ export function AppTopbar({
   return (
     <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-2 sm:gap-6">
+          <MobileNav />
           <Logo href="/dashboard" />
           <nav className="hidden items-center gap-1 md:flex">
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-            >
-              <LayoutDashboard className="size-4" />
-              Dashboard
-            </Link>
-            <Link
-              href="/employees"
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-            >
-              <Users className="size-4" />
-              Employees
-            </Link>
-            <Link
-              href="/payslips"
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-            >
-              <ReceiptText className="size-4" />
-              Payslips
-            </Link>
-            <Link
-              href="/leave"
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-            >
-              <CalendarDays className="size-4" />
-              Leave
-            </Link>
-            <Link
-              href="/reminders"
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-            >
-              <BellRing className="size-4" />
-              Reminders
-            </Link>
-            <Link
-              href="/vault"
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-            >
-              <Vault className="size-4" />
-              Vault
-            </Link>
+            {NAV_ITEMS.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                <item.icon className="size-4" />
+                {item.label}
+              </Link>
+            ))}
           </nav>
         </div>
 

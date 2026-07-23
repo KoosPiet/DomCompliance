@@ -39,13 +39,30 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  // Emit a standalone server bundle for lean Docker images.
-  output: "standalone",
+  // Emit a standalone server bundle for lean Docker images. On Vercel we let its
+  // native Next.js builder take over (it sets VERCEL=1), so skip standalone there.
+  output: process.env.VERCEL ? undefined : "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
   experimental: {
-    // Allow document uploads (PDF/image) through Server Actions, up to ~10MB.
-    serverActions: { bodySizeLimit: "12mb" },
+    serverActions: {
+      // Allow document uploads (PDF/image) through Server Actions, up to ~10MB.
+      bodySizeLimit: "12mb",
+      // In dev only, accept Server Action POSTs proxied through a public tunnel
+      // (VS Code / Cloudflare / ngrok) so a remote tester can submit forms.
+      // Production stays locked to its own origin.
+      ...(isDev
+        ? {
+            allowedOrigins: [
+              "*.devtunnels.ms",
+              "*.trycloudflare.com",
+              "*.ngrok-free.app",
+              "*.ngrok.io",
+              "*.loca.lt",
+            ],
+          }
+        : {}),
+    },
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

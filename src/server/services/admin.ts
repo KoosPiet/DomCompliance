@@ -1,5 +1,42 @@
 import type { AuditAction, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { recordAudit } from "@/server/audit";
+import type { AdminUpdateUserInput } from "@/lib/validations/admin";
+
+interface Ctx {
+  ip?: string;
+  userAgent?: string;
+}
+
+export class AdminError extends Error {
+  constructor(
+    public code:
+      | "FORBIDDEN"
+      | "NOT_FOUND"
+      | "EMAIL_TAKEN"
+      | "SELF_ROLE"
+      | "SELF_DELETE"
+      | "LAST_ADMIN",
+    message: string,
+  ) {
+    super(message);
+    this.name = "AdminError";
+  }
+}
+
+/** The acting user must be a live platform ADMIN (SUPPORT is read-only). */
+async function assertPlatformAdmin(adminUserId: string) {
+  const admin = await prisma.user.findFirst({
+    where: { id: adminUserId, deletedAt: null },
+  });
+  if (!admin || admin.role !== "ADMIN") {
+    throw new AdminError(
+      "FORBIDDEN",
+      "Only platform admins can manage user accounts.",
+    );
+  }
+  return admin;
+}
 
 /** Aggregate metrics for the admin dashboard. */
 export async function getAdminOverview() {
@@ -134,5 +171,140 @@ export function listTickets() {
       user: { select: { email: true, name: true } },
       _count: { select: { messages: true } },
     },
+  });
+}
+
+/**
+ * Update a user's name, email, role and active state on behalf of an admin.
+ * Guards against self-role changes and removing the last admin, and enforces
+ * email uniqueness. Writes an audit entry with before/after.
+ */
+export async function updateUserByAdmin(
+  adminUserId: string,
+  targetUserId: string,
+  input: AdminUpdateUserInput,
+  ctx: Ctx = {},
+) {
+  await assertPlatformAdmin(adminUserId);
+
+  const target = await prisma.user.findFirst({
+    where: { id: targetUserId, deletedAt: null },
+  });
+  if (!target) throw new AdminError("NOT_FOUND", "User not found.");
+
+  const name = input.name?.trim() || null;
+  const isSelf = targetUserId === adminUserId;
+
+  // An admin must not lock themselves out of the platform.
+  if (isSelf && input.role !== target.role) {
+    throw new AdminError("SELF_ROLE", "You cannot change your own role.");
+  }
+  if (isSelf && !input.isActive) {
+    throw new AdminError("SELF_ROLE", "You cannot deactivate your own account.");
+  }
+
+  // Email must stay unique across all accounts.
+  if (input.email !== target.email) {
+    const existing = await prisma.user.findUnique({
+      where: { email: input.email },
+    });
+    if (existing && existing.id !== targetUserId) {
+      throw new AdminError("EMAIL_TAKEN", "That email is already in use.");
+    }
+  }
+
+  // Never leave the platform with no active admin.
+  const demotingAdmin = target.role === "ADMIN" && input.role !== "ADMIN";
+  if (demotingAdmin) {
+    const activeAdmins = await prisma.user.count({
+      where: { role: "ADMIN", deletedAt: null, isActive: true },
+    });
+    if (activeAdmins <= 1) {
+      throw new AdminError(
+        "LAST_ADMIN",
+        "You cannot demote the last remaining admin.",
+      );
+    }
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: targetUserId },
+    data: { name, email: input.email, role: input.role, isActive: input.isActive },
+  });
+
+  await recordAudit({
+    action: "UPDATE",
+    entityType: "User",
+    entityId: targetUserId,
+    actorId: adminUserId,
+    actorEmail: target.email,
+    description: `Admin updated account ${updated.email}`,
+    before: {
+      name: target.name,
+      email: target.email,
+      role: target.role,
+      isActive: target.isActive,
+    },
+    after: {
+      name: updated.name,
+      email: updated.email,
+      role: updated.role,
+      isActive: updated.isActive,
+    },
+    ipAddress: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+
+  return updated;
+}
+
+/**
+ * Soft-delete a user: sets deletedAt and deactivates the account. The auth
+ * layer already rejects sign-in for deleted/inactive users, so this removes
+ * their access while retaining records for audit. Cannot delete yourself or
+ * the last remaining admin.
+ */
+export async function softDeleteUserByAdmin(
+  adminUserId: string,
+  targetUserId: string,
+  ctx: Ctx = {},
+) {
+  await assertPlatformAdmin(adminUserId);
+
+  if (targetUserId === adminUserId) {
+    throw new AdminError("SELF_DELETE", "You cannot delete your own account.");
+  }
+
+  const target = await prisma.user.findFirst({
+    where: { id: targetUserId, deletedAt: null },
+  });
+  if (!target) throw new AdminError("NOT_FOUND", "User not found.");
+
+  if (target.role === "ADMIN") {
+    const activeAdmins = await prisma.user.count({
+      where: { role: "ADMIN", deletedAt: null, isActive: true },
+    });
+    if (activeAdmins <= 1) {
+      throw new AdminError(
+        "LAST_ADMIN",
+        "You cannot delete the last remaining admin.",
+      );
+    }
+  }
+
+  await prisma.user.update({
+    where: { id: targetUserId },
+    data: { deletedAt: new Date(), isActive: false },
+  });
+
+  await recordAudit({
+    action: "DELETE",
+    entityType: "User",
+    entityId: targetUserId,
+    actorId: adminUserId,
+    actorEmail: target.email,
+    description: `Admin deleted account ${target.email}`,
+    ipAddress: ctx.ip,
+    userAgent: ctx.userAgent,
   });
 }

@@ -14,6 +14,8 @@ import {
   type EmployeeInput,
 } from "@/lib/validations/employee";
 import { SA_PROVINCES } from "@/lib/validations/employer";
+import { annualLeaveEntitlement } from "@/domain/leave/accrual";
+import { LEAVE } from "@/domain/constants";
 import {
   createEmployeeAction,
   updateEmployeeAction,
@@ -67,6 +69,36 @@ function SectionTitle({ children }: { children: ReactNode }) {
   );
 }
 
+/** Days-per-week options. Many domestic workers are part-time — 1, 2 or 3 days
+ *  a week — so leave must scale to their actual schedule. */
+const DAY_OPTIONS: { value: string; label: string }[] = [
+  { value: "1", label: "1 day / week" },
+  { value: "2", label: "2 days / week" },
+  { value: "3", label: "3 days / week" },
+  { value: "4", label: "4 days / week" },
+  { value: "5", label: "5 days / week (full-time)" },
+  { value: "6", label: "6 days / week" },
+  { value: "7", label: "7 days / week" },
+];
+
+function LeaveStat({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+}) {
+  return (
+    <div className="rounded-lg bg-background/60 p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-lg font-semibold tracking-tight">{value}</p>
+      <p className="text-xs text-muted-foreground">{sub}</p>
+    </div>
+  );
+}
+
 export function EmployeeForm({
   mode,
   employeeId,
@@ -89,6 +121,14 @@ export function EmployeeForm({
   });
 
   const occupation = watch("occupation");
+
+  // Live statutory-leave preview, scaled to the chosen days-per-week (BCEA).
+  const workingDaysPerWeek =
+    Number.parseInt(watch("workingDaysPerWeek") ?? "5", 10) || 5;
+  const annualLeaveDays = annualLeaveEntitlement(workingDaysPerWeek);
+  const sickLeaveDays = workingDaysPerWeek * LEAVE.SICK_WEEKS_PER_CYCLE;
+  const familyResponsibilityEligible =
+    workingDaysPerWeek >= LEAVE.FAMILY_RESPONSIBILITY_MIN_DAYS_PER_WEEK;
 
   function Field({
     name,
@@ -248,9 +288,9 @@ export function EmployeeForm({
           </Field>
           <Field name="workingDaysPerWeek" label="Working days / week">
             <select className={selectClass} {...register("workingDaysPerWeek")}>
-              {["1", "2", "3", "4", "5", "6", "7"].map((d) => (
-                <option key={d} value={d}>
-                  {d}
+              {DAY_OPTIONS.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
                 </option>
               ))}
             </select>
@@ -261,6 +301,38 @@ export function EmployeeForm({
           <Field name="scheduleNote" label="Schedule note" optional className="sm:col-span-2">
             <Input {...register("scheduleNote")} placeholder="e.g. Mon–Fri 08:00–17:00" />
           </Field>
+        </div>
+
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <p className="text-sm font-medium">
+            Statutory leave for a {workingDaysPerWeek}-day week
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Calculated automatically from the days above. The BCEA scales leave
+            to how many days a week the worker actually works, so a part-time
+            worker earns proportionally less than a full-time one.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <LeaveStat
+              label="Annual leave"
+              value={`${annualLeaveDays} days`}
+              sub="per year"
+            />
+            <LeaveStat
+              label="Sick leave"
+              value={`${sickLeaveDays} days`}
+              sub="per 3-year cycle"
+            />
+            <LeaveStat
+              label="Family responsibility"
+              value={familyResponsibilityEligible ? "3 days" : "Not eligible"}
+              sub={
+                familyResponsibilityEligible
+                  ? "per year"
+                  : "needs 4+ days / week"
+              }
+            />
+          </div>
         </div>
       </section>
 

@@ -195,6 +195,7 @@ export default async function DashboardPage() {
           icon={<Users className="size-5" />}
           label="Employees"
           value={String(employeeCount)}
+          href="/employees"
         />
         <StatTile
           icon={<Clock className="size-5" />}
@@ -262,18 +263,31 @@ function StatTile({
   icon,
   label,
   value,
+  href,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
+  href?: string;
 }) {
-  return (
-    <div className="rounded-xl border bg-card p-5">
+  const inner = (
+    <>
       <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
         {icon}
       </div>
       <p className="mt-3 text-sm text-muted-foreground">{label}</p>
       <p className="mt-0.5 text-xl font-semibold tracking-tight">{value}</p>
-    </div>
+    </>
   );
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="block rounded-xl border bg-card p-5 transition-colors hover:border-primary/40 hover:bg-muted/40"
+      >
+        {inner}
+      </Link>
+    );
+  }
+  return <div className="rounded-xl border bg-card p-5">{inner}</div>;
 }

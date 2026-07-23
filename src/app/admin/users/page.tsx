@@ -1,9 +1,11 @@
 import { Search } from "lucide-react";
+import { auth } from "@/auth";
 import { listAdminUsers } from "@/server/services/admin";
 import { buildMetadata } from "@/lib/seo";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { UserRowActions } from "@/components/admin/user-row-actions";
 
 export const metadata = buildMetadata({ title: "Admin · Users", path: "/admin/users", noIndex: true });
 
@@ -13,7 +15,10 @@ export default async function AdminUsersPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const { q } = await searchParams;
-  const users = await listAdminUsers(q);
+  const [session, users] = await Promise.all([auth(), listAdminUsers(q)]);
+  // Only full ADMINs may manage accounts; SUPPORT sees the list read-only.
+  const canManage = session?.user?.role === "ADMIN";
+  const currentAdminId = session?.user?.id ?? "";
 
   return (
     <div className="space-y-6">
@@ -41,6 +46,7 @@ export default async function AdminUsersPage({
               <th className="px-4 py-3 font-medium">Employees</th>
               <th className="px-4 py-3 font-medium">Payslips</th>
               <th className="px-4 py-3 font-medium">Joined</th>
+              {canManage && <th className="px-4 py-3 text-right font-medium">Actions</th>}
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -59,6 +65,20 @@ export default async function AdminUsersPage({
                 <td className="px-4 py-3 text-muted-foreground">{u._count.employees}</td>
                 <td className="px-4 py-3 text-muted-foreground">{u._count.payslips}</td>
                 <td className="px-4 py-3 text-muted-foreground">{u.createdAt.toLocaleDateString("en-ZA")}</td>
+                {canManage && (
+                  <td className="px-4 py-3">
+                    <UserRowActions
+                      user={{
+                        id: u.id,
+                        name: u.name,
+                        email: u.email,
+                        role: u.role,
+                        isActive: u.isActive,
+                      }}
+                      currentAdminId={currentAdminId}
+                    />
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
