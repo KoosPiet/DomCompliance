@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { evaluateCompliance } from "@/domain/compliance/scoring";
 import { assessRequestSchema } from "@/lib/validations/compliance";
@@ -31,6 +32,11 @@ export async function POST(request: Request) {
     const result = evaluateCompliance(body.answers);
     const riskFlags = result.risks.map((r) => r.questionId);
 
+    // If a signed-in user re-checks, tie the assessment to their account so it
+    // updates their dashboard score. Anonymous checks stay unattributed.
+    const session = await auth();
+    const userId = session?.user?.id;
+
     let assessmentId: string | null = null;
 
     try {
@@ -50,7 +56,8 @@ export async function POST(request: Request) {
 
       const assessment = await prisma.complianceAssessment.create({
         data: {
-          source: body.source,
+          userId,
+          source: userId ? "DASHBOARD" : body.source,
           answers: body.answers,
           score: result.score,
           rating: result.rating,

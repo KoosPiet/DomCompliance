@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -36,7 +37,11 @@ type Phase = "questions" | "loading" | "result";
 
 const TOTAL = COMPLIANCE_QUESTIONS.length;
 
-export function ComplianceWizard() {
+export function ComplianceWizard({
+  isAuthenticated = false,
+}: {
+  isAuthenticated?: boolean;
+}) {
   const [phase, setPhase] = useState<Phase>("questions");
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Answers>({});
@@ -164,6 +169,7 @@ export function ComplianceWizard() {
           result={result}
           assessmentId={assessmentId}
           onRestart={restart}
+          isAuthenticated={isAuthenticated}
         />
       )}
     </div>
@@ -211,10 +217,12 @@ function ResultView({
   result,
   assessmentId,
   onRestart,
+  isAuthenticated,
 }: {
   result: ComplianceResult;
   assessmentId: string | null;
   onRestart: () => void;
+  isAuthenticated: boolean;
 }) {
   const atRisk = result.score < 80 && !result.notApplicable;
 
@@ -294,7 +302,28 @@ function ResultView({
         <ShareButtons score={result.score} />
       </div>
 
-      <TrialCaptureForm assessmentId={assessmentId} atRisk={atRisk} />
+      {isAuthenticated ? (
+        <div className="flex flex-col items-center gap-4 rounded-xl border-2 border-primary/30 bg-card p-6 text-center shadow-lg shadow-primary/5">
+          <BadgeCheck className="size-8 text-primary" />
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">
+              Saved to your account
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Your compliance score is updated on your dashboard, where you can
+              fix each gap.
+            </p>
+          </div>
+          <Button asChild>
+            <Link href="/dashboard">
+              Back to dashboard
+              <ArrowRight className="size-4" />
+            </Link>
+          </Button>
+        </div>
+      ) : (
+        <TrialCaptureForm assessmentId={assessmentId} atRisk={atRisk} />
+      )}
 
       <div className="text-center">
         <Button variant="ghost" size="sm" onClick={onRestart}>

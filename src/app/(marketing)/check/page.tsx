@@ -7,6 +7,8 @@ export const metadata = buildMetadata({
   description:
     "Answer 3 quick questions to see if you're legally compliant employing a domestic worker in South Africa. Free, instant, no signup.",
   path: "/check",
+  // Use this route's own opengraph-image.tsx (the attention-grabbing ad card).
+  ogImage: null,
 });
 
 export default function CheckPage() {

@@ -34,6 +34,7 @@ const EMPTY: EmployeeInput = {
   lastName: "",
   idNumber: "",
   passportNumber: "",
+  workPermitNumber: "",
   phone: "",
   whatsapp: "",
   email: "",
@@ -199,6 +200,12 @@ export function EmployeeForm({
           </Field>
           <Field name="passportNumber" label="Passport number" optional>
             <Input {...register("passportNumber")} placeholder="If no SA ID" />
+          </Field>
+          <Field name="workPermitNumber" label="Work permit number" optional>
+            <Input
+              {...register("workPermitNumber")}
+              placeholder="For foreign nationals"
+            />
           </Field>
         </div>
         <p className="text-xs text-muted-foreground">

@@ -141,6 +141,7 @@ export default async function EmployeeDetailPage({
         <Panel title="Personal">
           <InfoRow label="SA ID number">{pii.idNumber}</InfoRow>
           <InfoRow label="Passport">{pii.passportNumber}</InfoRow>
+          <InfoRow label="Work permit">{pii.workPermitNumber}</InfoRow>
           <InfoRow label="Start date">
             {employee.startDate.toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" })}
           </InfoRow>

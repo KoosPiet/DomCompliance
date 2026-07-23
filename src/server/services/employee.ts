@@ -31,6 +31,7 @@ function toPersistenceData(input: EmployeeInput): Prisma.EmployeeCreateWithoutUs
     lastName: input.lastName.trim(),
     idNumber: encryptPii(clean(input.idNumber)),
     passportNumber: encryptPii(clean(input.passportNumber)),
+    workPermitNumber: encryptPii(clean(input.workPermitNumber)),
     phone: clean(input.phone),
     whatsapp: clean(input.whatsapp),
     email: input.email ? input.email.trim().toLowerCase() : null,
@@ -97,6 +98,7 @@ export async function getEmployee(userId: string, id: string): Promise<Employee>
 export interface DecryptedPii {
   idNumber: string | null;
   passportNumber: string | null;
+  workPermitNumber: string | null;
   bankAccountNumber: string | null;
   bankAccountMasked: string;
 }
@@ -107,6 +109,7 @@ export function decryptEmployeePii(employee: Employee): DecryptedPii {
   return {
     idNumber: decryptPii(employee.idNumber),
     passportNumber: decryptPii(employee.passportNumber),
+    workPermitNumber: decryptPii(employee.workPermitNumber),
     bankAccountNumber,
     bankAccountMasked: maskTail(bankAccountNumber),
   };
@@ -120,6 +123,7 @@ export function toFormValues(employee: Employee): EmployeeInput {
     lastName: employee.lastName,
     idNumber: pii.idNumber ?? "",
     passportNumber: pii.passportNumber ?? "",
+    workPermitNumber: pii.workPermitNumber ?? "",
     phone: employee.phone ?? "",
     whatsapp: employee.whatsapp ?? "",
     email: employee.email ?? "",

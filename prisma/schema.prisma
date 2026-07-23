@@ -365,8 +365,9 @@ model Employee {
   lastName  String
 
   // Identity (encrypted at rest)
-  idNumber       String?
-  passportNumber String?
+  idNumber        String?
+  passportNumber  String?
+  workPermitNumber String?
 
   // Contact
   phone    String?

@@ -68,7 +68,7 @@ export async function generateContract(
     },
     employee: {
       fullName: `${employee.firstName} ${employee.lastName}`,
-      idOrPassport: pii.idNumber ?? pii.passportNumber ?? null,
+      idOrPassport: pii.idNumber ?? pii.passportNumber ?? pii.workPermitNumber ?? null,
       address: joinAddress(
         employee.addressLine1,
         employee.addressLine2,

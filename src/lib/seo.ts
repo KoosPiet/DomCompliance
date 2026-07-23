@@ -10,6 +10,14 @@ export function buildMetadata(params?: {
   description?: string;
   path?: string;
   noIndex?: boolean;
+  /**
+   * Social share image. Defaults to the site card at `/opengraph-image`.
+   * Pass `null` on a route that ships its own `opengraph-image` file (e.g.
+   * `/check`) so that route-level card is used instead. Setting an explicit
+   * `openGraph.images` here is required — otherwise Next drops the file-based
+   * image whenever a metadata export defines `openGraph`.
+   */
+  ogImage?: string | null;
 }): Metadata {
   const title = params?.title
     ? `${params.title} · ${siteConfig.name}`
@@ -18,6 +26,7 @@ export function buildMetadata(params?: {
   const url = params?.path
     ? new URL(params.path, siteConfig.url).toString()
     : siteConfig.url;
+  const ogImage = params?.ogImage === undefined ? "/opengraph-image" : params.ogImage;
 
   return {
     metadataBase: new URL(siteConfig.url),
@@ -36,12 +45,15 @@ export function buildMetadata(params?: {
       siteName: siteConfig.name,
       title,
       description,
-      // Social image is generated dynamically by app/opengraph-image.tsx.
+      ...(ogImage
+        ? { images: [{ url: ogImage, width: 1200, height: 630, alt: title }] }
+        : {}),
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
+      ...(ogImage ? { images: [ogImage] } : {}),
     },
     icons: {
       icon: [

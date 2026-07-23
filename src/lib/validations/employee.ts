@@ -48,6 +48,7 @@ export const employeeSchema = z.object({
     .optional()
     .or(z.literal("")),
   passportNumber: z.string().trim().max(30).optional(),
+  workPermitNumber: z.string().trim().max(30).optional(),
 
   // Contact
   phone: optionalString,

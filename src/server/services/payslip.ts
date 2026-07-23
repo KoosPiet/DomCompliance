@@ -73,7 +73,10 @@ function buildPdfInput(
     },
     employee: {
       fullName: `${employee.firstName} ${employee.lastName}`,
-      idOrPassport: decryptPii(employee.idNumber) ?? decryptPii(employee.passportNumber),
+      idOrPassport:
+        decryptPii(employee.idNumber) ??
+        decryptPii(employee.passportNumber) ??
+        decryptPii(employee.workPermitNumber),
       occupation: occupationLabel(employee.occupation, employee.otherOccupation),
       bankName: employee.bankName,
       bankAccountMasked: maskTail(decryptPii(employee.bankAccountNumber)),
