@@ -21,6 +21,7 @@ import {
   updateEmployeeAction,
 } from "@/server/actions/employee-actions";
 import { Field } from "@/components/forms/field";
+import { DateField } from "@/components/forms/date-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -248,7 +249,11 @@ export function EmployeeForm({
             </Field>
           )}
           <Field name="startDate" label="Start date">
-            <Input {...register("startDate")} type="date" />
+            <DateField
+              name="startDate"
+              fromYear={1990}
+              placeholder="When they started working for you"
+            />
           </Field>
           <Field name="salary" label="Salary (ZAR)">
             <Input {...register("salary")} inputMode="decimal" placeholder="4500.00" />

@@ -19,6 +19,7 @@ import {
   updateReminderAction,
 } from "@/server/actions/reminder-actions";
 import { Field } from "@/components/forms/field";
+import { DateField } from "@/components/forms/date-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -129,7 +130,7 @@ export function ReminderForm({
             <Textarea rows={2} {...register("description")} />
           </Field>
           <Field name="dueDate" label="Next due">
-            <Input type="date" {...register("dueDate")} />
+            <DateField name="dueDate" placeholder="When is it due?" />
           </Field>
           <div className="flex flex-col gap-2 pt-1">
             <label className="flex items-center gap-2 text-sm">

@@ -20,6 +20,7 @@ import {
 import { calculatePayslip } from "@/domain/payroll/payslip";
 import { formatZar } from "@/domain/money";
 import { Field } from "@/components/forms/field";
+import { DateField } from "@/components/forms/date-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -163,7 +164,7 @@ export function PayslipForm({
                 </select>
               </Field>
               <Field name="payDate" label="Pay date">
-                <Input type="date" {...register("payDate")} />
+                <DateField name="payDate" />
               </Field>
             </div>
           </section>

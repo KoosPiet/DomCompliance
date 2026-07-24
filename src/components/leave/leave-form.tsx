@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { logLeaveSchema, LEAVE_TYPES, type LogLeaveInput } from "@/lib/validations/leave";
 import { logLeaveAction, updateLeaveAction } from "@/server/actions/leave-actions";
 import { Field } from "@/components/forms/field";
+import { DateField } from "@/components/forms/date-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -132,10 +133,10 @@ export function LeaveForm({
               </select>
             </Field>
             <Field name="startDate" label="From">
-              <Input type="date" {...register("startDate")} />
+              <DateField name="startDate" placeholder="First day of leave" />
             </Field>
-            <Field name="endDate" label="To">
-              <Input type="date" {...register("endDate")} />
+            <Field name="endDate" label="To (same day = 1 day or half day)">
+              <DateField name="endDate" placeholder="Last day of leave" />
             </Field>
             <Field name="days" label="Days taken (0.5 = half day)">
               <Input
