@@ -118,6 +118,61 @@ export async function resolveDocumentDownload(
   }
 }
 
+export interface DocumentMetaUpdate {
+  title: string;
+  type: DocumentType;
+  employeeId?: string;
+}
+
+/**
+ * Update an uploaded document's metadata (title, type, linked employee).
+ * Generated documents (contracts/payslips) keep their type — their metadata is
+ * derived from the source record, not editable here.
+ */
+export async function updateUserDocument(
+  userId: string,
+  id: string,
+  meta: DocumentMetaUpdate,
+  ctx: Ctx = {},
+): Promise<void> {
+  const doc = await prisma.document.findFirst({
+    where: { id, userId, deletedAt: null },
+  });
+  if (!doc) throw new DocumentError("NOT_FOUND", "Document not found.");
+  if (doc.storageKey.startsWith("generated:")) {
+    throw new DocumentError(
+      "NOT_FOUND",
+      "Generated contracts and payslips can't be re-classified.",
+    );
+  }
+
+  let employeeId: string | null = null;
+  if (meta.employeeId) {
+    const employee = await getEmployee(userId, meta.employeeId); // ownership check
+    employeeId = employee.id;
+  }
+
+  await prisma.document.update({
+    where: { id },
+    data: {
+      title: meta.title.trim(),
+      type: meta.type,
+      employeeId,
+      searchText: `${meta.title.trim()} ${doc.fileName}`,
+    },
+  });
+
+  await recordAudit({
+    action: "UPDATE",
+    entityType: "Document",
+    entityId: id,
+    actorId: userId,
+    description: `Updated document “${meta.title.trim()}”`,
+    ipAddress: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+}
+
 export async function softDeleteDocument(userId: string, id: string, ctx: Ctx = {}): Promise<void> {
   const doc = await prisma.document.findFirst({ where: { id, userId, deletedAt: null } });
   if (!doc) return;

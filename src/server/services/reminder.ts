@@ -78,6 +78,49 @@ export async function createReminder(
   return reminder.id;
 }
 
+/**
+ * Update a reminder's details. Changing the due date re-arms the schedule
+ * (status back to PENDING, next run at the new date).
+ */
+export async function updateReminder(
+  userId: string,
+  id: string,
+  input: ReminderInput,
+  ctx: Ctx = {},
+): Promise<void> {
+  const existing = await prisma.reminder.findFirst({
+    where: { id, userId, deletedAt: null },
+  });
+  if (!existing) return;
+
+  const dueDate = new Date(input.dueDate);
+  await prisma.reminder.update({
+    where: { id },
+    data: {
+      type: input.type,
+      frequency: input.frequency,
+      title: input.title.trim(),
+      description: input.description?.trim() || null,
+      dueDate,
+      nextRunAt: dueDate,
+      status: "PENDING",
+      completedAt: null,
+      channelEmail: input.channelEmail,
+      channelWhatsapp: input.channelWhatsapp,
+    },
+  });
+
+  await recordAudit({
+    action: "UPDATE",
+    entityType: "Reminder",
+    entityId: id,
+    actorId: userId,
+    description: `Updated reminder “${input.title.trim()}”`,
+    ipAddress: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+}
+
 export async function completeReminder(userId: string, id: string): Promise<void> {
   const reminder = await prisma.reminder.findFirst({ where: { id, userId, deletedAt: null } });
   if (!reminder) return;

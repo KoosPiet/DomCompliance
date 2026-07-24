@@ -11,6 +11,7 @@ import {
 } from "@/lib/validations/document";
 import {
   uploadUserDocument,
+  updateUserDocument,
   softDeleteDocument,
   DocumentError,
 } from "@/server/services/document";
@@ -69,6 +70,38 @@ export async function uploadDocumentAction(
   }
 
   redirect("/vault");
+}
+
+export async function updateDocumentAction(
+  id: string,
+  input: { title: string; type: string; employeeId?: string },
+): Promise<DocumentActionResult> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const meta = documentMetaSchema.safeParse(input);
+  if (!meta.success) {
+    return { ok: false, message: "Please add a title and choose a type." };
+  }
+
+  const ctx = await getRequestContext();
+  try {
+    await updateUserDocument(
+      session.user.id,
+      id,
+      {
+        title: meta.data.title,
+        type: meta.data.type as DocumentType,
+        employeeId: meta.data.employeeId || undefined,
+      },
+      ctx,
+    );
+  } catch (e) {
+    if (e instanceof DocumentError) return { ok: false, message: e.message };
+    throw e;
+  }
+
+  return { ok: true };
 }
 
 export async function deleteDocumentAction(id: string): Promise<void> {

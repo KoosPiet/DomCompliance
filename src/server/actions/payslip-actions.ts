@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getRequestContext } from "@/lib/request";
 import { payslipSchema, type PayslipInput } from "@/lib/validations/payslip";
-import { createPayslip, PayslipError } from "@/server/services/payslip";
+import { createPayslip, updatePayslip, PayslipError } from "@/server/services/payslip";
 import { EmployeeError } from "@/server/services/employee";
 import {
   sendPayslipEmail,
@@ -40,6 +40,42 @@ export async function createPayslipAction(
   let id: string;
   try {
     id = await createPayslip(session.user.id, parsed.data, ctx);
+  } catch (e) {
+    if (e instanceof PayslipError) {
+      return {
+        ok: false,
+        message: e.message,
+        code: e.code === "NOT_FOUND" ? undefined : e.code,
+      };
+    }
+    if (e instanceof EmployeeError) {
+      return { ok: false, message: "Selected employee was not found." };
+    }
+    throw e;
+  }
+
+  redirect(`/payslips/${id}`);
+}
+
+export async function updatePayslipAction(
+  id: string,
+  input: PayslipInput,
+): Promise<PayslipActionResult> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const parsed = payslipSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "Please check the highlighted fields.",
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    };
+  }
+
+  const ctx = await getRequestContext();
+  try {
+    await updatePayslip(session.user.id, id, parsed.data, ctx);
   } catch (e) {
     if (e instanceof PayslipError) {
       return {

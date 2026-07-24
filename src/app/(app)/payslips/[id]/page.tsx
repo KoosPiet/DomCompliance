@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Download } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, Pencil } from "lucide-react";
 import { auth } from "@/auth";
 import { buildMetadata } from "@/lib/seo";
 import { getPayslipView, PayslipError } from "@/server/services/payslip";
@@ -60,11 +60,18 @@ export default async function PayslipDetailPage({
             <h1 className="text-2xl font-semibold tracking-tight">Payslip — {period}</h1>
             <p className="mt-1 font-mono text-sm text-muted-foreground">{payslip.payslipNumber}</p>
           </div>
-          <Button asChild variant="outline">
-            <a href={`/payslips/${id}/pdf`} target="_blank" rel="noopener noreferrer">
-              <Download className="size-4" /> PDF
-            </a>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline">
+              <Link href={`/payslips/${id}/edit`}>
+                <Pencil className="size-4" /> Edit
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <a href={`/payslips/${id}/pdf`} target="_blank" rel="noopener noreferrer">
+                <Download className="size-4" /> PDF
+              </a>
+            </Button>
+          </div>
         </div>
       </div>
 

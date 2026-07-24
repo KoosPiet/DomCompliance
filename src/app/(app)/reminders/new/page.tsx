@@ -26,7 +26,7 @@ export default async function NewReminderPage() {
         </Button>
         <h1 className="text-2xl font-semibold tracking-tight">Add reminder</h1>
         <p className="mt-1 text-muted-foreground">
-          We'll notify you by email (and WhatsApp when connected) when it's due.
+          We&apos;ll notify you by email (and WhatsApp when connected) when it&apos;s due.
         </p>
       </div>
       <ReminderForm />

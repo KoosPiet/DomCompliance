@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DeleteEmployeeButton } from "@/components/employees/delete-employee-button";
 import { UploadDocument } from "@/components/vault/upload-document";
+import { DeleteContractButton } from "@/components/contracts/delete-contract-button";
 
 export const metadata = buildMetadata({
   title: "Employee",
@@ -220,9 +221,16 @@ export default async function EmployeeDetailPage({
                     </span>
                   </span>
                 </Link>
-                <Badge variant={CONTRACT_STATUS_VARIANT[c.status] ?? "outline"}>
-                  {c.status.replace("_", " ").toLowerCase()}
-                </Badge>
+                <span className="flex items-center gap-1">
+                  <Badge variant={CONTRACT_STATUS_VARIANT[c.status] ?? "outline"}>
+                    {c.status.replace("_", " ").toLowerCase()}
+                  </Badge>
+                  <DeleteContractButton
+                    id={c.id}
+                    contractNumber={c.contractNumber}
+                    signed={c.status === "SIGNED"}
+                  />
+                </span>
               </li>
             ))}
           </ul>

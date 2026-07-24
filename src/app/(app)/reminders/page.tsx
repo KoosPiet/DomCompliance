@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BellRing, Check, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { BellRing, Check, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { auth } from "@/auth";
 import { buildMetadata } from "@/lib/seo";
 import { listReminders } from "@/server/services/reminder";
@@ -70,7 +70,7 @@ export default async function RemindersPage() {
               Upcoming
             </h2>
             {upcoming.length === 0 ? (
-              <p className="text-sm text-muted-foreground">You're all caught up. 🎉</p>
+              <p className="text-sm text-muted-foreground">You&apos;re all caught up. 🎉</p>
             ) : (
               <ul className="space-y-3">
                 {upcoming.map((r) => {
@@ -98,6 +98,11 @@ export default async function RemindersPage() {
                         <Badge variant="secondary" className="mr-1">
                           {reminderTypeLabel(r.type)}
                         </Badge>
+                        <Button asChild size="sm" variant="ghost" title="Edit">
+                          <Link href={`/reminders/${r.id}/edit`}>
+                            <Pencil className="size-4" />
+                          </Link>
+                        </Button>
                         <form action={completeReminderAction.bind(null, r.id)}>
                           <Button type="submit" size="sm" variant="outline">
                             <Check className="size-4" /> Done

@@ -14,7 +14,7 @@ export function isWhatsappConfigured(): boolean {
 
 /** Normalise a South African number to E.164 digits (no +). e.g. 082… -> 2782…. */
 export function normaliseZaPhone(raw: string): string {
-  let digits = raw.replace(/\D/g, "");
+  const digits = raw.replace(/\D/g, "");
   if (digits.startsWith("27")) return digits;
   if (digits.startsWith("0")) return `27${digits.slice(1)}`;
   if (digits.length === 9) return `27${digits}`; // missing leading zero

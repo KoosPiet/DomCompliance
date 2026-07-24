@@ -65,8 +65,11 @@ export function ThemeProvider({
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
 
   useEffect(() => {
+    // One-time mount sync from localStorage. Must happen post-hydration (the
+    // server can't read localStorage), so a setState here is intentional.
     const stored = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
     if (stored === "light" || stored === "dark" || stored === "system") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setThemeState(stored);
     }
   }, []);

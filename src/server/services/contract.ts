@@ -168,6 +168,49 @@ export function toPdfInput(contract: EmploymentContract): ContractPdfInput {
   };
 }
 
+/**
+ * Soft-delete a contract (and its vault document, if one was created on
+ * signing). Records stay recoverable in the database; the contract simply
+ * disappears from the employee's list and the vault. Returns the employeeId
+ * so the caller can redirect back to the employee.
+ */
+export async function softDeleteContract(
+  userId: string,
+  id: string,
+  ctx: Ctx = {},
+): Promise<string> {
+  const contract = await prisma.employmentContract.findFirst({
+    where: { id, userId, deletedAt: null },
+  });
+  if (!contract) throw new ContractError("NOT_FOUND", "Contract not found.");
+
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    await tx.employmentContract.update({
+      where: { id },
+      data: { deletedAt: now },
+    });
+    if (contract.documentId) {
+      await tx.document.update({
+        where: { id: contract.documentId },
+        data: { deletedAt: now },
+      });
+    }
+    await recordAudit({
+      tx,
+      action: "DELETE",
+      entityType: "EmploymentContract",
+      entityId: id,
+      actorId: userId,
+      description: `Deleted contract ${contract.contractNumber}`,
+      ipAddress: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+  });
+
+  return contract.employeeId;
+}
+
 /** Load an owned contract or throw NOT_FOUND (used by the PDF route). */
 export async function getContractForPdf(userId: string, id: string): Promise<EmploymentContract> {
   const contract = await prisma.employmentContract.findFirst({

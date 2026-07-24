@@ -81,7 +81,15 @@ export function listEmployees(userId: string) {
     where: { userId, deletedAt: null },
     orderBy: [{ status: "asc" }, { firstName: "asc" }],
     include: {
-      _count: { select: { contracts: true, payslips: true, documents: true } },
+      // Filtered counts: soft-deleted records must not inflate the numbers
+      // shown on the employee cards.
+      _count: {
+        select: {
+          contracts: { where: { deletedAt: null } },
+          payslips: { where: { deletedAt: null } },
+          documents: { where: { deletedAt: null } },
+        },
+      },
     },
   });
 }

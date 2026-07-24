@@ -230,6 +230,126 @@ export async function createPayslip(
   return payslip.id;
 }
 
+/**
+ * Update an existing payslip: recalculate all derived amounts, refresh the
+ * linked vault document (title, file name, size, checksum) and keep the
+ * payslip number consistent with the period. The PDF renders on demand from
+ * these fields, so no stored file needs replacing.
+ */
+export async function updatePayslip(
+  userId: string,
+  id: string,
+  input: PayslipInput,
+  ctx: Ctx = {},
+): Promise<string> {
+  const existing = await prisma.payslip.findFirst({
+    where: { id, userId, deletedAt: null },
+  });
+  if (!existing) throw new PayslipError("NOT_FOUND", "Payslip not found.");
+
+  const employee = await getEmployee(userId, input.employeeId);
+  const month = Number(input.periodMonth);
+  const year = Number(input.periodYear);
+
+  // Same period+employee must remain unique — but the payslip itself is allowed
+  // to keep its own slot.
+  const duplicate = await prisma.payslip.findUnique({
+    where: {
+      employeeId_periodYear_periodMonth: {
+        employeeId: employee.id,
+        periodYear: year,
+        periodMonth: month,
+      },
+    },
+  });
+  if (duplicate && duplicate.id !== id) {
+    throw new PayslipError(
+      "DUPLICATE",
+      `A payslip for ${monthLabel(month)} ${year} already exists for this employee.`,
+    );
+  }
+
+  const calc = calculatePayslip({
+    earnings: {
+      basicSalary: toAmount(input.basicSalary),
+      overtime: toAmount(input.overtime),
+      allowances: toAmount(input.allowances),
+      bonuses: toAmount(input.bonuses),
+      otherEarnings: toAmount(input.otherEarnings),
+    },
+    deductions: { otherDeductions: toAmount(input.otherDeductions) },
+    applyUif: input.applyUif,
+    applyPaye: input.applyPaye,
+  });
+
+  const periodChanged =
+    year !== existing.periodYear || month !== existing.periodMonth;
+  const number = periodChanged
+    ? payslipNumber(year, month)
+    : existing.payslipNumber;
+
+  const payslip = await prisma.payslip.update({
+    where: { id },
+    data: {
+      employeeId: employee.id,
+      payslipNumber: number,
+      periodMonth: month,
+      periodYear: year,
+      periodStart: new Date(year, month - 1, 1),
+      periodEnd: new Date(year, month, 0),
+      payDate: new Date(input.payDate),
+      basicSalary: toAmount(input.basicSalary),
+      overtime: toAmount(input.overtime),
+      allowances: toAmount(input.allowances),
+      bonuses: toAmount(input.bonuses),
+      otherEarnings: toAmount(input.otherEarnings),
+      grossEarnings: calc.grossEarnings,
+      uifEmployee: calc.uifEmployee,
+      paye: calc.paye,
+      otherDeductions: calc.otherDeductions,
+      totalDeductions: calc.totalDeductions,
+      uifEmployer: calc.uifEmployer,
+      netPay: calc.netPay,
+      notes: input.notes?.trim() || null,
+    },
+  });
+
+  // Refresh the vault document so search text, size and checksum match.
+  const employeeName = `${employee.firstName} ${employee.lastName}`;
+  if (payslip.documentId) {
+    const [profile, user] = await Promise.all([
+      prisma.employerProfile.findUnique({ where: { userId } }),
+      prisma.user.findUnique({ where: { id: userId } }),
+    ]);
+    const pdfBytes = await renderPayslipPdf(buildPdfInput(payslip, employee, profile, user));
+    const checksum = createHash("sha256").update(pdfBytes).digest("hex");
+    await prisma.document.update({
+      where: { id: payslip.documentId },
+      data: {
+        employeeId: employee.id,
+        title: `Payslip — ${employeeName} — ${monthLabel(month)} ${year}`,
+        fileName: `${number}.pdf`,
+        sizeBytes: pdfBytes.byteLength,
+        checksum,
+        tags: ["payslip", `${year}`],
+        searchText: `${employeeName} payslip ${monthLabel(month)} ${year} ${number}`,
+      },
+    });
+  }
+
+  await recordAudit({
+    action: "UPDATE",
+    entityType: "Payslip",
+    entityId: id,
+    actorId: userId,
+    description: `Edited payslip ${number} for ${employeeName}`,
+    ipAddress: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+
+  return id;
+}
+
 export function listPayslips(userId: string) {
   return prisma.payslip.findMany({
     where: { userId, deletedAt: null },

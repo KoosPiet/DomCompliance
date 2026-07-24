@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useTransition } from "react";
-import { useForm } from "react-hook-form";
+import { FormProvider, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -20,11 +20,10 @@ import {
   createEmployeeAction,
   updateEmployeeAction,
 } from "@/server/actions/employee-actions";
+import { Field } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 
 const selectClass =
   "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
@@ -110,16 +109,11 @@ export function EmployeeForm({
   defaultValues?: Partial<EmployeeInput>;
 }) {
   const [pending, startTransition] = useTransition();
-  const {
-    register,
-    handleSubmit,
-    watch,
-    setError,
-    formState: { errors },
-  } = useForm<EmployeeInput>({
+  const methods = useForm<EmployeeInput>({
     resolver: zodResolver(employeeSchema),
     defaultValues: { ...EMPTY, ...defaultValues },
   });
+  const { register, handleSubmit, watch, setError } = methods;
 
   const occupation = watch("occupation");
 
@@ -130,32 +124,6 @@ export function EmployeeForm({
   const sickLeaveDays = workingDaysPerWeek * LEAVE.SICK_WEEKS_PER_CYCLE;
   const familyResponsibilityEligible =
     workingDaysPerWeek >= LEAVE.FAMILY_RESPONSIBILITY_MIN_DAYS_PER_WEEK;
-
-  function Field({
-    name,
-    label,
-    children,
-    optional,
-    className,
-  }: {
-    name?: keyof EmployeeInput;
-    label: string;
-    children: ReactNode;
-    optional?: boolean;
-    className?: string;
-  }) {
-    const error = name ? errors[name] : undefined;
-    return (
-      <div className={cn("space-y-1.5", className)}>
-        <Label>
-          {label}
-          {optional && <span className="ml-1 text-muted-foreground">(optional)</span>}
-        </Label>
-        {children}
-        {error && <p className="text-sm text-danger">{error.message as string}</p>}
-      </div>
-    );
-  }
 
   function onSubmit(values: EmployeeInput) {
     startTransition(async () => {
@@ -184,6 +152,7 @@ export function EmployeeForm({
   }
 
   return (
+    <FormProvider {...methods}>
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-8" noValidate>
       {/* Personal */}
       <section className="space-y-4 rounded-2xl border bg-card p-6">
@@ -396,5 +365,6 @@ export function EmployeeForm({
         </Button>
       </div>
     </form>
+    </FormProvider>
   );
 }

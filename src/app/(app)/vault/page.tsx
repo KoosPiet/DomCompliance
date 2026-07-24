@@ -8,6 +8,7 @@ import { buildMetadata } from "@/lib/seo";
 import { listEmployees } from "@/server/services/employee";
 import { deleteDocumentAction } from "@/server/actions/document-actions";
 import { UploadDocument } from "@/components/vault/upload-document";
+import { EditDocument } from "@/components/vault/edit-document";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -184,6 +185,17 @@ export default async function VaultPage({
                   <td className="px-4 py-3 text-muted-foreground">{formatSize(doc.sizeBytes)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
+                      {!doc.storageKey.startsWith("generated:") && (
+                        <EditDocument
+                          doc={{
+                            id: doc.id,
+                            title: doc.title,
+                            type: doc.type,
+                            employeeId: doc.employeeId,
+                          }}
+                          employees={employeeOptions}
+                        />
+                      )}
                       <Button asChild size="sm" variant="ghost">
                         <a
                           href={`/api/v1/documents/${doc.id}/download`}

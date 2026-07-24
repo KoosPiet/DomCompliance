@@ -10,6 +10,7 @@ import {
 import {
   generateContract,
   signContract,
+  softDeleteContract,
   ContractError,
 } from "@/server/services/contract";
 
@@ -53,4 +54,21 @@ export async function signContractAction(
   }
 
   redirect(`/contracts/${contractId}`);
+}
+
+/** Soft-delete a contract and return to the employee it belonged to. */
+export async function deleteContractAction(id: string): Promise<void> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const ctx = await getRequestContext();
+  let employeeId: string;
+  try {
+    employeeId = await softDeleteContract(session.user.id, id, ctx);
+  } catch {
+    // Already gone — land on the employees list.
+    redirect("/employees");
+  }
+
+  redirect(`/employees/${employeeId}`);
 }
