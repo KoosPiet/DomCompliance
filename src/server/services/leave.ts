@@ -83,7 +83,8 @@ export async function getEmployeeLeaveOverview(
       entitledDays: round2(s.entitledDays),
       accruedDays: round2(s.accruedDays),
       takenDays: round2(taken),
-      balanceDays: Math.max(0, round2(base - taken)),
+      // Deliberately allowed to go negative — an employer must see overdrawn leave.
+      balanceDays: round2(base - taken),
     };
   });
 
@@ -128,7 +129,7 @@ export async function getLeaveOverview(userId: string): Promise<{
       entitled: round2(entitled),
       accrued: round2(accrued),
       taken: round2(taken),
-      balance: Math.max(0, round2(accrued - taken)),
+      balance: round2(accrued - taken), // may be negative (overdrawn)
     };
   });
 
@@ -189,4 +190,104 @@ export async function logLeave(
   });
 
   return request.id;
+}
+
+/** Update a logged leave entry and keep its ledger entry in sync. */
+export async function updateLeave(
+  userId: string,
+  id: string,
+  input: LogLeaveInput,
+  ctx: Ctx = {},
+): Promise<void> {
+  const existing = await prisma.leaveRequest.findFirst({
+    where: { id, userId, deletedAt: null },
+  });
+  if (!existing) return;
+
+  const employee = await getEmployee(userId, input.employeeId);
+  const days = Number(input.days);
+  const start = new Date(input.startDate);
+  const end = new Date(input.endDate);
+  const reason = input.reason?.trim() || null;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.leaveRequest.update({
+      where: { id },
+      data: {
+        employeeId: employee.id,
+        leaveType: input.leaveType,
+        startDate: start,
+        endDate: end,
+        days,
+        reason,
+      },
+    });
+
+    // Keep the ledger consistent with the corrected entry.
+    await tx.leaveLedgerEntry.updateMany({
+      where: { leaveRequestId: id },
+      data: {
+        employeeId: employee.id,
+        leaveType: input.leaveType,
+        days: -days,
+        effectiveDate: start,
+        note: reason,
+      },
+    });
+
+    await recordAudit({
+      tx,
+      action: "UPDATE",
+      entityType: "LeaveRequest",
+      entityId: id,
+      actorId: userId,
+      description: `Edited leave: ${days} day(s) ${leaveTypeLabel(input.leaveType)} for ${employee.firstName} ${employee.lastName}`,
+      ipAddress: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+  });
+}
+
+/** Remove a logged leave entry (soft delete + reversing ledger entry). */
+export async function deleteLeave(
+  userId: string,
+  id: string,
+  ctx: Ctx = {},
+): Promise<void> {
+  const existing = await prisma.leaveRequest.findFirst({
+    where: { id, userId, deletedAt: null },
+  });
+  if (!existing) return;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.leaveRequest.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+
+    // Balances are computed from live requests; this reversal keeps the
+    // immutable ledger's running total honest.
+    await tx.leaveLedgerEntry.create({
+      data: {
+        employeeId: existing.employeeId,
+        leaveType: existing.leaveType,
+        type: "ADJUSTMENT",
+        days: existing.days, // reverses the negative TAKEN entry
+        effectiveDate: new Date(),
+        note: "Reversal — leave entry deleted",
+        leaveRequestId: id,
+      },
+    });
+
+    await recordAudit({
+      tx,
+      action: "DELETE",
+      entityType: "LeaveRequest",
+      entityId: id,
+      actorId: userId,
+      description: `Deleted leave entry (${Number(existing.days)} day(s) ${leaveTypeLabel(existing.leaveType)})`,
+      ipAddress: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+  });
 }

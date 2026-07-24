@@ -130,7 +130,7 @@ export async function renderContractPdf(input: ContractPdfInput): Promise<Uint8A
   ].filter(Boolean));
   partyBlock("EMPLOYEE", [
     terms.employee.fullName,
-    terms.employee.idOrPassport ? `ID / Passport: ${terms.employee.idOrPassport}` : "",
+    terms.employee.idOrPassport ? `ID / Passport / Work Permit: ${terms.employee.idOrPassport}` : "",
     terms.employee.address ?? "",
     `Position: ${terms.employee.occupationLabel}`,
   ].filter(Boolean));

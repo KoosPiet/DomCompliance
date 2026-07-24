@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CalendarDays, Plus, Users } from "lucide-react";
+import { CalendarDays, Pencil, Plus, Users } from "lucide-react";
+import { DeleteLeaveButton } from "@/components/leave/delete-leave-button";
 import { auth } from "@/auth";
 import { buildMetadata } from "@/lib/seo";
 import { getLeaveOverview } from "@/server/services/leave";
@@ -70,9 +71,11 @@ export default async function LeavePage() {
                     </p>
                     <CalendarDays className="size-4 text-muted-foreground" />
                   </div>
-                  <p className="mt-3 text-3xl font-semibold tracking-tight">
+                  <p className={`mt-3 text-3xl font-semibold tracking-tight ${row.balance < 0 ? "text-danger" : ""}`}>
                     {row.balance}
-                    <span className="text-sm font-normal text-muted-foreground"> days available</span>
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {row.balance < 0 ? " days overdrawn" : " days available"}
+                    </span>
                   </p>
                   <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                     <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
@@ -101,9 +104,20 @@ export default async function LeavePage() {
                         {r.employee.firstName} {r.employee.lastName}
                       </span>
                     </div>
-                    <span className="text-muted-foreground">
-                      {fmt(r.startDate)} – {fmt(r.endDate)} · {Number(r.days)} day
-                      {Number(r.days) === 1 ? "" : "s"}
+                    <span className="flex items-center gap-1">
+                      <span className="text-muted-foreground">
+                        {fmt(r.startDate)} – {fmt(r.endDate)} · {Number(r.days)} day
+                        {Number(r.days) === 1 ? "" : "s"}
+                      </span>
+                      <Button asChild size="sm" variant="ghost" title="Edit">
+                        <Link href={`/leave/${r.id}/edit`}>
+                          <Pencil className="size-4" />
+                        </Link>
+                      </Button>
+                      <DeleteLeaveButton
+                        id={r.id}
+                        summary={`${Number(r.days)} day(s) ${leaveTypeLabel(r.leaveType)} for ${r.employee.firstName}`}
+                      />
                     </span>
                   </li>
                 ))}

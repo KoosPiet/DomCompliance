@@ -109,7 +109,7 @@ export async function renderPayslipPdf(input: PayslipPdfInput): Promise<Uint8Arr
   };
   cell("Employee", input.employee.fullName, leftX, 0);
   cell("Occupation", input.employee.occupation, leftX, 1);
-  cell("ID / Passport", input.employee.idOrPassport ?? "—", leftX, 2);
+  cell("ID / Passport / Permit", input.employee.idOrPassport ?? "—", leftX, 2);
   cell("Pay period", input.period.label, rightX, 0);
   cell("Pay date", input.period.payDateLabel, rightX, 1);
   cell("Payslip no.", input.payslipNumber, rightX, 2);

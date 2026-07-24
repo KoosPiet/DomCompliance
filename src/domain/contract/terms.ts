@@ -116,7 +116,7 @@ export function buildContractTerms(input: ContractTermsInput): ContractTerms {
   const add = (heading: string, body: string[]) => clauses.push({ number: ++n, heading, body });
 
   add("Parties", [
-    `This employment contract is entered into between ${employerName} ("the Employer")${input.employer.address ? ` of ${input.employer.address}` : ""}, and ${employeeName} ("the Employee")${input.employee.idOrPassport ? `, ID/Passport ${input.employee.idOrPassport}` : ""}.`,
+    `This employment contract is entered into between ${employerName} ("the Employer")${input.employer.address ? ` of ${input.employer.address}` : ""}, and ${employeeName} ("the Employee")${input.employee.idOrPassport ? `, ID / Passport / Work Permit No. ${input.employee.idOrPassport}` : ""}.`,
     "This contract complies with the Basic Conditions of Employment Act 75 of 1997 (BCEA) and Sectoral Determination 7 for Domestic Workers.",
   ]);
 

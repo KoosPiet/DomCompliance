@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   CreditCard,
+  History,
   LogOut,
   ShieldAlert,
   ShieldCheck,
@@ -105,6 +106,12 @@ export function AppTopbar({
                 <Link href="/billing">
                   <CreditCard className="size-4" />
                   Billing
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/activity">
+                  <History className="size-4" />
+                  Activity log
                 </Link>
               </DropdownMenuItem>
               {isAdmin && (

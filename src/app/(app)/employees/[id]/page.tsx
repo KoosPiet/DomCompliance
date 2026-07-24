@@ -282,9 +282,11 @@ export default async function EmployeeDetailPage({
           {leave.balances.map((b) => (
             <div key={b.leaveType} className="rounded-xl border bg-background p-4">
               <p className="text-xs text-muted-foreground">{b.label}</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight">
+              <p className={`mt-1 text-2xl font-semibold tracking-tight ${b.balanceDays < 0 ? "text-danger" : ""}`}>
                 {b.balanceDays}
-                <span className="text-xs font-normal text-muted-foreground"> days</span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  {b.balanceDays < 0 ? " days overdrawn" : " days"}
+                </span>
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {b.takenDays} taken · {b.accruedDays} accrued
