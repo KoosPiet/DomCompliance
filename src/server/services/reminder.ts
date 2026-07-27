@@ -2,7 +2,7 @@ import { addMonths, addYears } from "date-fns";
 import type { ReminderFrequency } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { recordAudit } from "@/server/audit";
-import { sendEmail } from "@/lib/email/resend";
+import { sendEmail } from "@/lib/email/send";
 import type { ReminderInput } from "@/lib/validations/reminder";
 
 interface Ctx {

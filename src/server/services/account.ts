@@ -7,10 +7,10 @@ import {
   verifyPasswordResetToken,
   hashToken,
 } from "@/lib/auth/tokens";
-import { sendEmail } from "@/lib/email/resend";
+import { sendEmail } from "@/lib/email/send";
 import {
   verificationEmail,
-  welcomeEmail,
+  welcomeVerifyEmail,
   passwordResetEmail,
 } from "@/lib/email/templates";
 import { recordAudit } from "@/server/audit";
@@ -105,18 +105,15 @@ export async function registerAccount(
     return created;
   });
 
-  // Fire-and-forget emails (never block registration on delivery).
+  // One combined welcome + verification email, sent fire-and-forget so
+  // registration never fails (or blocks) on email delivery.
   const rawToken = await createEmailVerificationToken(email);
   const verifyUrl = appUrl(
     `/verify-email?token=${rawToken}&email=${encodeURIComponent(email)}`,
   );
-  const verify = verificationEmail({ name: user.name, url: verifyUrl });
-  const welcome = welcomeEmail({ name: user.name, url: appUrl("/dashboard") });
+  const mail = welcomeVerifyEmail({ name: user.name, url: verifyUrl });
 
-  await Promise.allSettled([
-    sendEmail({ to: email, ...verify }),
-    sendEmail({ to: email, ...welcome }),
-  ]);
+  await Promise.allSettled([sendEmail({ to: email, ...mail })]);
 
   return user;
 }

@@ -68,15 +68,23 @@ export function passwordResetEmail(params: { name?: string | null; url: string }
   };
 }
 
-export function welcomeEmail(params: { name?: string | null; url: string }) {
-  const name = params.name ? `Welcome, ${params.name}!` : "Welcome!";
+/**
+ * Single signup email: welcome + email confirmation in one message.
+ *
+ * Deliberately merged — sending a separate welcome and verification email
+ * doubled our send volume (and every provider's free tier is measured in
+ * emails, not signups) while giving the new user two things to read instead
+ * of one clear next step.
+ */
+export function welcomeVerifyEmail(params: { name?: string | null; url: string }) {
+  const greeting = params.name ? `Welcome, ${params.name}!` : "Welcome!";
   return {
-    subject: "Welcome to LabourMate 🎉",
+    subject: "Confirm your email — welcome to LabourMate 🎉",
     html: layout({
-      heading: name,
-      body: `<p style="margin:0 0 12px;">Your free trial is active. Here's how to become compliant in minutes:</p><ol style="margin:0 0 12px;padding-left:18px;color:${TEXT};font-size:15px;line-height:1.7;"><li>Add your employee's details</li><li>Generate a compliant employment contract</li><li>Create and send your first payslip</li></ol>`,
-      cta: { label: "Go to dashboard", url: params.url },
+      heading: greeting,
+      body: `<p style="margin:0 0 12px;">Your free trial is active. Please confirm your email address to secure your account — then you're three steps from compliant:</p><ol style="margin:0 0 12px;padding-left:18px;color:${TEXT};font-size:15px;line-height:1.7;"><li>Add your employee's details</li><li>Generate a compliant employment contract</li><li>Create and send your first payslip</li></ol><p style="margin:0;color:${MUTED};font-size:13px;">This confirmation link expires in 24 hours.</p>`,
+      cta: { label: "Confirm email & get started", url: params.url },
     }),
-    text: `Welcome to LabourMate! Your free trial is active. Get started: ${params.url}`,
+    text: `Welcome to LabourMate! Your free trial is active. Confirm your email address to secure your account: ${params.url} (expires in 24 hours).`,
   };
 }

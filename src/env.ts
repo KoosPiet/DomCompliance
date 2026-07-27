@@ -29,9 +29,15 @@ const serverSchema = z.object({
   // Application-layer PII encryption (AES-256-GCM). 32-byte key, base64 or hex.
   ENCRYPTION_KEY: z.string().min(32, "ENCRYPTION_KEY must decode to 32 bytes"),
 
-  // Email (Resend)
+  // Email. SMTP takes priority when configured (works with Brevo, Amazon SES,
+  // ZeptoMail, Mailgun, or any host), otherwise the Resend API is used.
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.string().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  SMTP_SECURE: z.enum(["true", "false"]).optional(),
   RESEND_API_KEY: z.string().optional(),
-  EMAIL_FROM: z.string().default("LabourMate <no-reply@labourmate.co.za>"),
+  EMAIL_FROM: z.string().default("LabourMate <no-reply@labourmate.org.za>"),
 
   // Supabase (server)
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),

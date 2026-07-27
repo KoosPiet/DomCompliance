@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { recordAudit } from "@/server/audit";
-import { sendEmail } from "@/lib/email/resend";
+import { sendEmail } from "@/lib/email/send";
 import {
   isWhatsappConfigured,
   uploadMedia,
