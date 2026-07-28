@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   CalendarDays,
   FileText,
-  FileSignature,
   Pencil,
   Plus,
   ReceiptText,
@@ -25,7 +24,7 @@ import { occupationLabel } from "@/lib/validations/employee";
 import { leaveTypeLabel } from "@/lib/validations/leave";
 import { monthLabel } from "@/lib/validations/payslip";
 import { formatZar } from "@/domain/money";
-import { generateContractAction } from "@/server/actions/contract-actions";
+import { GenerateContractButton } from "@/components/contracts/generate-contract-button";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DeleteEmployeeButton } from "@/components/employees/delete-employee-button";
@@ -106,7 +105,6 @@ export default async function EmployeeDetailPage({
     getEmployeeLeaveOverview(session.user.id, id),
   ]);
 
-  const generateContract = generateContractAction.bind(null, id);
   // Once employment has ended, nothing new may be issued in their name.
   const hasEmployeeLeft = employee.status === "TERMINATED";
 
@@ -134,13 +132,7 @@ export default async function EmployeeDetailPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {!hasEmployeeLeft && (
-              <form action={generateContract}>
-                <Button type="submit">
-                  <FileSignature className="size-4" /> Generate contract
-                </Button>
-              </form>
-            )}
+            {!hasEmployeeLeft && <GenerateContractButton employeeId={id} />}
             <Button asChild variant="outline">
               <Link href={`/employees/${id}/edit`}>
                 <Pencil className="size-4" /> Edit
@@ -240,11 +232,14 @@ export default async function EmployeeDetailPage({
       <div className="rounded-2xl border bg-card p-5">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Employment contracts</h2>
-          <form action={generateContract}>
-            <Button type="submit" size="sm" variant="outline">
-              <FileSignature className="size-4" /> New contract
-            </Button>
-          </form>
+          {!hasEmployeeLeft && (
+            <GenerateContractButton
+              employeeId={id}
+              label="New contract"
+              size="sm"
+              variant="outline"
+            />
+          )}
         </div>
         {contracts.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">

@@ -49,7 +49,12 @@ export async function createPayslipAction(
       };
     }
     if (e instanceof EmployeeError) {
-      return { ok: false, message: "Selected employee was not found." };
+      // NOT_EMPLOYED carries a clear explanation; NOT_FOUND does not.
+      return {
+        ok: false,
+        message:
+          e.code === "NOT_EMPLOYED" ? e.message : "Selected employee was not found.",
+      };
     }
     throw e;
   }
@@ -85,7 +90,12 @@ export async function updatePayslipAction(
       };
     }
     if (e instanceof EmployeeError) {
-      return { ok: false, message: "Selected employee was not found." };
+      // NOT_EMPLOYED carries a clear explanation; NOT_FOUND does not.
+      return {
+        ok: false,
+        message:
+          e.code === "NOT_EMPLOYED" ? e.message : "Selected employee was not found.",
+      };
     }
     throw e;
   }

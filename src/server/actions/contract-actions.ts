@@ -13,15 +13,32 @@ import {
   softDeleteContract,
   ContractError,
 } from "@/server/services/contract";
+import { EmployeeError } from "@/server/services/employee";
 
-/** Generate a contract from an employee record and open it. Bound with the
- *  employee id, so it can be used directly as a `<form action>`. */
-export async function generateContractAction(employeeId: string): Promise<void> {
+export type ContractActionResult = { ok: true } | { ok: false; message: string };
+
+/**
+ * Generate a contract from an employee record and open it. Returns a message
+ * on failure rather than throwing — a rejected action (e.g. the employee has
+ * left) must read as an explanation, not a crashed page.
+ */
+export async function generateContractAction(
+  employeeId: string,
+): Promise<ContractActionResult> {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
   const ctx = await getRequestContext();
-  const id = await generateContract(session.user.id, employeeId, ctx);
+  let id: string;
+  try {
+    id = await generateContract(session.user.id, employeeId, ctx);
+  } catch (e) {
+    if (e instanceof EmployeeError || e instanceof ContractError) {
+      return { ok: false, message: e.message };
+    }
+    throw e;
+  }
+
   redirect(`/contracts/${id}`);
 }
 
@@ -49,7 +66,9 @@ export async function signContractAction(
   try {
     await signContract(session.user.id, contractId, parsed.data, ctx);
   } catch (e) {
-    if (e instanceof ContractError) return { ok: false, message: e.message };
+    if (e instanceof ContractError || e instanceof EmployeeError) {
+      return { ok: false, message: e.message };
+    }
     throw e;
   }
 
