@@ -75,6 +75,29 @@ export const footerNav: { heading: string; items: NavItem[] }[] = [
 
 export type PlanId = "FREE_TRIAL" | "PREMIUM_MONTHLY" | "PREMIUM_ANNUAL";
 
+/**
+ * Netcash Pay Now subscription frequency codes (field m18).
+ * 1 Monthly · 2 Weekly · 3 Bi-weekly · 4 Quarterly · 5 Six-monthly
+ * 6 Annually · 7 Daily
+ */
+export const NETCASH_FREQUENCY = {
+  MONTHLY: 1,
+  WEEKLY: 2,
+  BIWEEKLY: 3,
+  QUARTERLY: 4,
+  SIX_MONTHLY: 5,
+  ANNUALLY: 6,
+  DAILY: 7,
+} as const;
+
+/**
+ * Number of billing cycles requested from Netcash (field m17, max 3 digits).
+ * Netcash requires a finite count, so we request the maximum — the practical
+ * equivalent of "until cancelled" — and stop collection by cancelling the
+ * subscription on the Netcash side when a customer cancels with us.
+ */
+export const NETCASH_MAX_CYCLES = 999;
+
 export interface PricingPlan {
   id: PlanId;
   name: string;
@@ -88,6 +111,13 @@ export interface PricingPlan {
   payslipLimit: number | null;
   highlighted?: boolean;
   cta: string;
+  /** Netcash recurring-billing settings; absent for non-recurring plans. */
+  subscription?: {
+    /** Netcash m18 frequency code. */
+    frequency: (typeof NETCASH_FREQUENCY)[keyof typeof NETCASH_FREQUENCY];
+    /** Netcash m17 cycle count. */
+    cycles: number;
+  };
 }
 
 export const PRICING: PricingPlan[] = [
@@ -129,6 +159,7 @@ export const PRICING: PricingPlan[] = [
     payslipLimit: null,
     highlighted: true,
     cta: "Go Premium",
+    subscription: { frequency: NETCASH_FREQUENCY.MONTHLY, cycles: NETCASH_MAX_CYCLES },
   },
   {
     id: "PREMIUM_ANNUAL",
@@ -145,6 +176,7 @@ export const PRICING: PricingPlan[] = [
     employeeLimit: null,
     payslipLimit: null,
     cta: "Save with annual",
+    subscription: { frequency: NETCASH_FREQUENCY.ANNUALLY, cycles: NETCASH_MAX_CYCLES },
   },
 ];
 

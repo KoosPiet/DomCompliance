@@ -14,8 +14,11 @@ import { prisma } from "@/lib/prisma";
 import { recordAudit } from "@/server/audit";
 import { toCents } from "@/domain/money";
 import { planById, type PlanId } from "@/config/site";
-import { generatePaymentReference } from "@/lib/netcash/paynow";
-import type { NetcashNotification } from "@/lib/netcash/paynow";
+import { generatePaymentReference, netcashDate } from "@/lib/netcash/paynow";
+import type {
+  NetcashNotification,
+  PayNowSubscription,
+} from "@/lib/netcash/paynow";
 
 export class BillingError extends Error {
   constructor(
@@ -53,6 +56,8 @@ export interface CheckoutResult {
   planId: PlanId;
   planName: string;
   customer: { name: string | null; email: string };
+  /** Netcash recurring-billing instruction, when the plan is a subscription. */
+  subscription?: PayNowSubscription;
 }
 
 /**
@@ -93,6 +98,17 @@ export async function createCheckout(
     },
   });
 
+  // The first charge happens now at Pay Now; recurring collection starts one
+  // full period later so the customer is never billed twice for this period.
+  const subscription: PayNowSubscription | undefined = plan.subscription
+    ? {
+        frequency: plan.subscription.frequency,
+        cycles: plan.subscription.cycles,
+        startDate: netcashDate(periodEndFor(planId, new Date())),
+        recurringAmountZar: plan.priceZar,
+      }
+    : undefined;
+
   return {
     paymentId: payment.id,
     reference,
@@ -102,6 +118,7 @@ export async function createCheckout(
     planId,
     planName: plan.name,
     customer: { name: user.name, email: user.email },
+    subscription,
   };
 }
 
@@ -115,7 +132,8 @@ export type ReconcileOutcome =
   | { status: "duplicate" }
   | { status: "unmatched"; reference: string }
   | { status: "declined"; paymentId: string }
-  | { status: "activated"; paymentId: string; plan: PlanId };
+  | { status: "activated"; paymentId: string; plan: PlanId }
+  | { status: "renewed"; paymentId: string; plan: PlanId; periodEnd: Date };
 
 /**
  * Apply a Netcash notification: mark the payment, and on success activate the
@@ -149,9 +167,11 @@ export async function applyNetcashNotification(
       data: { processedAt: new Date(), error: error ?? null },
     });
 
-  // 2. Match the payment by our reference.
+  // 2. Match the payment by our reference (the original charge for this
+  //    subscription — recurring cycles reuse the same reference).
   const payment = await prisma.payment.findFirst({
     where: { providerReference: notification.reference },
+    orderBy: { createdAt: "asc" },
   });
 
   if (!payment) {
@@ -159,10 +179,18 @@ export async function applyNetcashNotification(
     return { status: "unmatched", reference: notification.reference };
   }
 
-  // Already reconciled — nothing to do (idempotent).
+  // The original charge is already settled. Since the webhook-event guard above
+  // already absorbed genuine duplicates, an accepted notification arriving here
+  // is a new recurring collection — extend the subscription rather than
+  // silently ignoring it (which would expire a paying customer).
   if (payment.status === "COMPLETED") {
+    if (!notification.accepted) {
+      await markProcessed(`Declined renewal for ${notification.reference}`);
+      return { status: "declined", paymentId: payment.id };
+    }
+    const renewal = await applyRenewal(payment, notification, ctx);
     await markProcessed();
-    return { status: "activated", paymentId: payment.id, plan: readPlan(payment.rawPayload) };
+    return renewal;
   }
 
   const planId = readPlan(payment.rawPayload);
@@ -266,6 +294,111 @@ export async function applyNetcashNotification(
 
   await markProcessed();
   return { status: "activated", paymentId: payment.id, plan: planId };
+}
+
+/**
+ * Apply a recurring collection: record the new payment, issue an invoice and
+ * push the subscription's period end out by one cycle. The new period runs from
+ * the existing period end (not "now"), so a customer never loses paid-for days
+ * if Netcash collects early or a notification is delayed.
+ */
+async function applyRenewal(
+  originalPayment: { id: string; userId: string; amountZarCents: number; rawPayload: Prisma.JsonValue | null },
+  notification: NetcashNotification,
+  ctx: ReconcileContext,
+): Promise<ReconcileOutcome> {
+  const planId = readPlan(originalPayment.rawPayload);
+  const plan = planById(planId);
+  const now = new Date();
+
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId: originalPayment.userId },
+  });
+
+  const periodStart =
+    subscription?.currentPeriodEnd && subscription.currentPeriodEnd > now
+      ? subscription.currentPeriodEnd
+      : now;
+  const periodEnd = periodEndFor(planId, periodStart);
+
+  // Netcash reports the recurring amount; fall back to what we charged first.
+  const amountZarCents =
+    notification.amount > 0 ? toCents(notification.amount) : originalPayment.amountZarCents;
+
+  const paymentId = await prisma.$transaction(async (tx) => {
+    const updatedSubscription = await tx.subscription.upsert({
+      where: { userId: originalPayment.userId },
+      create: {
+        userId: originalPayment.userId,
+        plan: planId,
+        status: "ACTIVE",
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+        priceZarCents: amountZarCents,
+        employeeLimit: null,
+        payslipLimit: null,
+        netcashAccountRef: notification.transactionId || null,
+      },
+      update: {
+        status: "ACTIVE",
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+        cancelAtPeriodEnd: false,
+        canceledAt: null,
+        netcashAccountRef: notification.transactionId || subscription?.netcashAccountRef,
+      },
+    });
+
+    const invoice = await tx.invoice.create({
+      data: {
+        userId: originalPayment.userId,
+        subscriptionId: updatedSubscription.id,
+        invoiceNumber: invoiceNumber(now),
+        status: "PAID",
+        amountZarCents,
+        totalZarCents: amountZarCents,
+        periodStart,
+        periodEnd,
+        issuedAt: now,
+        paidAt: now,
+      },
+    });
+
+    const renewalPayment = await tx.payment.create({
+      data: {
+        userId: originalPayment.userId,
+        subscriptionId: updatedSubscription.id,
+        invoiceId: invoice.id,
+        provider: "NETCASH",
+        status: "COMPLETED",
+        providerReference: notification.reference,
+        amountZarCents,
+        method: notification.method,
+        processedAt: now,
+        rawPayload: {
+          ...(notification.raw as Record<string, string>),
+          planId,
+          renewalOf: originalPayment.id,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    await recordAudit({
+      tx,
+      action: "PAYMENT",
+      entityType: "Subscription",
+      entityId: updatedSubscription.id,
+      actorId: originalPayment.userId,
+      description: `Netcash recurring payment received — ${plan.name} renewed to ${periodEnd.toLocaleDateString("en-ZA")}`,
+      metadata: { reference: notification.reference, invoiceId: invoice.id },
+      ipAddress: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+
+    return renewalPayment.id;
+  });
+
+  return { status: "renewed", paymentId, plan: planId, periodEnd };
 }
 
 /** Read the plan id stashed on the payment at checkout, with a safe default. */

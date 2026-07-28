@@ -33,8 +33,6 @@ export async function startCheckoutAction(planId: PlanId): Promise<CheckoutRespo
     const checkout = await createCheckout(session.user.id, planId);
 
     const [firstName, ...rest] = (checkout.customer.name ?? "").trim().split(" ");
-    const returnBase = `/api/v1/payments/netcash/return`;
-    const origin = config.urls.accept.replace(/\/payment\/success$/, "");
 
     const fields = buildPayNowFields(config, {
       amountZar: checkout.amountZar,
@@ -47,8 +45,8 @@ export async function startCheckoutAction(planId: PlanId): Promise<CheckoutRespo
       extra1: checkout.paymentId,
       extra2: session.user.id,
       extra3: checkout.planId,
-      acceptUrl: `${origin}${returnBase}?status=success&ref=${checkout.reference}`,
-      redirectUrl: `${origin}${returnBase}?status=pending&ref=${checkout.reference}`,
+      // Recurring billing: Netcash collects each cycle and notifies us.
+      subscription: checkout.subscription,
     });
 
     return { ok: true, action: config.payNowUrl, fields };

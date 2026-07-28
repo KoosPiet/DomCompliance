@@ -1,14 +1,20 @@
 /**
  * Netcash Pay Now form builder + notification parser.
  *
- * The field mapping mirrors the proven TrailTime integration so LabourMate
- * behaves identically against the shared merchant account:
- *   m1  service key            p2  unique reference (<= 25 chars)
+ * Field mapping per the Pay Now e-commerce specification:
+ *   m1  service key             p2  unique reference (<= 25 chars)
  *   m2  software vendor key     p3  description (<= 50 chars)
- *   p4  amount in ZAR (2dp)     m4/m5/m6  pass-through extras (Extra1/2/3)
- *   m9  customer email          m10 accept (return) URL
- *   m11 customer cell           m14 redirect URL
- *   m15 customer name           Budget = "N"
+ *   p4  amount in ZAR (2dp)     Budget  "Y" (compulsory)
+ *   m4/m5/m6  pass-through extras, returned verbatim as Extra1/2/3
+ *   m9  cardholder email        m11 cardholder mobile
+ *   m14 request subscription token (0/1)
+ *   m15 existing card token for subscription cards
+ *   m16 subscription indicator (0/1)
+ *   m17 number of cycles        m18 frequency code
+ *   m19 start date CCYY-MM-DD   m20 recurring amount
+ *
+ * Accept / decline / notify / redirect URLs are NOT sent per transaction —
+ * they are configured once as postback URLs on the Netcash Pay Now service.
  */
 
 import { customAlphabet } from "nanoid";
@@ -26,6 +32,20 @@ export function generatePaymentReference(prefix = "LM"): string {
   return `${prefix}-${time}-${refSuffix()}`.slice(0, 25);
 }
 
+export interface PayNowSubscription {
+  /** Netcash frequency code (m18): 1 monthly, 6 annually, etc. */
+  frequency: number;
+  /** Number of billing cycles (m17, max 3 digits). */
+  cycles: number;
+  /** First recurring charge, CCYY-MM-DD (m19). */
+  startDate: string;
+  /**
+   * Recurring amount (m20). May differ from the initial payment — e.g. a
+   * discounted or pro-rated first charge followed by the standard price.
+   */
+  recurringAmountZar: number;
+}
+
 export interface PayNowInput {
   amountZar: number;
   reference: string;
@@ -39,9 +59,18 @@ export interface PayNowInput {
   extra1?: string;
   extra2?: string;
   extra3?: string;
-  /** Per-transaction return URLs (default to the account-level config URLs). */
-  acceptUrl?: string;
-  redirectUrl?: string;
+  /** When set, Netcash sets up recurring billing for this transaction. */
+  subscription?: PayNowSubscription;
+  /** Reuse a stored card token instead of asking for card details again (m15). */
+  cardToken?: string;
+}
+
+/** Format a date as Netcash's CCYY-MM-DD, in local (SA) terms. */
+export function netcashDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 /**
@@ -59,19 +88,33 @@ export function buildPayNowFields(
     p2: input.reference,
     p3: input.description.slice(0, 50),
     p4: input.amountZar.toFixed(2),
-    Budget: "N",
+    // Compulsory per the Pay Now specification.
+    Budget: "Y",
     m4: input.extra1 ?? "",
     m5: input.extra2 ?? "",
     m6: input.extra3 ?? "",
-    m10: input.acceptUrl ?? config.urls.accept,
-    m14: input.redirectUrl ?? config.urls.redirect,
   };
 
   if (input.email) fields.m9 = input.email;
   if (input.cellNumber) fields.m11 = input.cellNumber;
 
-  const name = `${input.firstName ?? ""} ${input.lastName ?? ""}`.trim();
-  if (name) fields.m15 = name;
+  if (input.subscription) {
+    const { frequency, cycles, startDate, recurringAmountZar } = input.subscription;
+    // Ask Netcash to return a card token so the card can be re-used later
+    // (e.g. when the customer changes plan) without re-capturing details.
+    fields.m14 = "1";
+    fields.m16 = "1";
+    fields.m17 = String(Math.min(999, Math.max(1, Math.trunc(cycles))));
+    fields.m18 = String(frequency);
+    fields.m19 = startDate;
+    fields.m20 = recurringAmountZar.toFixed(2);
+  } else {
+    fields.m14 = "0";
+    fields.m16 = "0";
+  }
+
+  // Charge an existing stored card rather than prompting for a new one.
+  if (input.cardToken) fields.m15 = input.cardToken;
 
   return fields;
 }
@@ -88,6 +131,8 @@ export interface NetcashNotification {
   extra1?: string;
   extra2?: string;
   extra3?: string;
+  /** Stored-card token returned when m14=1 was requested. */
+  cardToken?: string;
   raw: Record<string, string>;
 }
 
@@ -136,6 +181,7 @@ export function parseNetcashNotification(
     extra1: pick(raw, "Extra1", "m4", "extra1") || undefined,
     extra2: pick(raw, "Extra2", "m5", "extra2") || undefined,
     extra3: pick(raw, "Extra3", "m6", "extra3") || undefined,
+    cardToken: pick(raw, "m15", "Token", "CardToken", "SubscriptionToken") || undefined,
     raw,
   };
 }
