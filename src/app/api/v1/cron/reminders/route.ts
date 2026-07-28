@@ -1,11 +1,13 @@
 import { env } from "@/env";
 import { safeEqual } from "@/lib/crypto/pii";
 import { runDueReminders } from "@/server/services/reminder";
+import { expireLapsedSubscriptions } from "@/server/services/billing";
 
 /**
- * Scheduled job: dispatch all due reminders. Secured by CRON_SECRET — Vercel
- * Cron automatically sends `Authorization: Bearer <CRON_SECRET>`. A `?secret=`
- * query param is also accepted for manual/external schedulers.
+ * Daily scheduled job: dispatch due reminders and close out subscriptions whose
+ * paid period has ended. Secured by CRON_SECRET — Vercel Cron automatically
+ * sends `Authorization: Bearer <CRON_SECRET>`. A `?secret=` query param is also
+ * accepted for manual/external schedulers.
  */
 
 export const runtime = "nodejs";
@@ -23,8 +25,17 @@ function authorized(request: Request): boolean {
 
 async function handle(request: Request): Promise<Response> {
   if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
-  const result = await runDueReminders();
-  return Response.json({ ok: true, ...result });
+  // Reminders must still go out even if subscription housekeeping fails.
+  const [reminders, subscriptions] = await Promise.allSettled([
+    runDueReminders(),
+    expireLapsedSubscriptions(),
+  ]);
+  return Response.json({
+    ok: true,
+    reminders: reminders.status === "fulfilled" ? reminders.value : { error: true },
+    subscriptions:
+      subscriptions.status === "fulfilled" ? subscriptions.value : { error: true },
+  });
 }
 
 export async function GET(request: Request): Promise<Response> {

@@ -8,6 +8,10 @@ import { formatZar, fromCents } from "@/domain/money";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { UpgradeButton } from "@/components/billing/upgrade-button";
+import {
+  CancelSubscriptionButton,
+  ResumeSubscriptionButton,
+} from "@/components/billing/cancel-subscription";
 
 export const metadata = buildMetadata({
   title: "Billing",
@@ -102,6 +106,36 @@ export default async function BillingPage() {
             </dd>
           </div>
         </dl>
+
+        {isPremium && (
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+            {subscription?.cancelAtPeriodEnd ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Cancelled — your access continues until{" "}
+                  <span className="font-medium text-foreground">
+                    {dateFmt(subscription.currentPeriodEnd)}
+                  </span>
+                  , then your account returns to the free plan.
+                </p>
+                <ResumeSubscriptionButton />
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Renews automatically on {dateFmt(subscription?.currentPeriodEnd)}.
+                </p>
+                <CancelSubscriptionButton
+                  endsAt={
+                    subscription?.currentPeriodEnd
+                      ? dateFmt(subscription.currentPeriodEnd)
+                      : undefined
+                  }
+                />
+              </>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Upgrade options */}

@@ -14,6 +14,12 @@ import { prisma } from "@/lib/prisma";
 import { recordAudit } from "@/server/audit";
 import { toCents } from "@/domain/money";
 import { planById, type PlanId } from "@/config/site";
+import { sendEmail } from "@/lib/email/send";
+import { subscriptionCancelledAdminEmail } from "@/lib/email/templates";
+import {
+  cancellationReasonLabel,
+  type CancelSubscriptionInput,
+} from "@/lib/validations/billing";
 import { generatePaymentReference, netcashDate } from "@/lib/netcash/paynow";
 import type {
   NetcashNotification,
@@ -25,7 +31,8 @@ export class BillingError extends Error {
     public readonly code:
       | "INVALID_PLAN"
       | "USER_NOT_FOUND"
-      | "NOT_CONFIGURED",
+      | "NOT_CONFIGURED"
+      | "NOT_SUBSCRIBED",
     message: string,
   ) {
     super(message);
@@ -383,14 +390,25 @@ async function applyRenewal(
       },
     });
 
+    // Money arriving after a cancellation means the Netcash instruction was
+    // never stopped. We still honour it (they paid, so they get the period),
+    // but it must be visible — this is refund/chargeback territory.
+    const collectedAfterCancellation = Boolean(subscription?.cancelAtPeriodEnd);
+
     await recordAudit({
       tx,
       action: "PAYMENT",
       entityType: "Subscription",
       entityId: updatedSubscription.id,
       actorId: originalPayment.userId,
-      description: `Netcash recurring payment received — ${plan.name} renewed to ${periodEnd.toLocaleDateString("en-ZA")}`,
-      metadata: { reference: notification.reference, invoiceId: invoice.id },
+      description: collectedAfterCancellation
+        ? `⚠️ Netcash collected AFTER cancellation — ${plan.name} extended to ${periodEnd.toLocaleDateString("en-ZA")}. Stop the collection at Netcash and consider a refund.`
+        : `Netcash recurring payment received — ${plan.name} renewed to ${periodEnd.toLocaleDateString("en-ZA")}`,
+      metadata: {
+        reference: notification.reference,
+        invoiceId: invoice.id,
+        collectedAfterCancellation,
+      },
       ipAddress: ctx.ip,
       userAgent: ctx.userAgent,
     });
@@ -399,6 +417,182 @@ async function applyRenewal(
   });
 
   return { status: "renewed", paymentId, plan: planId, periodEnd };
+}
+
+/**
+ * Cancel a subscription at the end of the period the customer has already paid
+ * for. Access is deliberately NOT revoked immediately — they bought that time.
+ *
+ * IMPORTANT: this stops LabourMate's side only. A Pay Now recurring instruction
+ * lives on the Netcash service, so collection must also be stopped there. We
+ * therefore flag the account for the operator rather than assuming it happened.
+ */
+export async function cancelSubscription(
+  userId: string,
+  input: CancelSubscriptionInput,
+  ctx: { ip?: string; userAgent?: string } = {},
+): Promise<{ endsAt: Date | null }> {
+  const subscription = await prisma.subscription.findUnique({ where: { userId } });
+  if (!subscription) {
+    throw new BillingError("NOT_SUBSCRIBED", "You don't have an active subscription.");
+  }
+  if (subscription.cancelAtPeriodEnd) {
+    return { endsAt: subscription.currentPeriodEnd };
+  }
+
+  const now = new Date();
+  const note = input.note?.trim() || null;
+
+  await prisma.subscription.update({
+    where: { userId },
+    data: { cancelAtPeriodEnd: true, canceledAt: now },
+  });
+
+  await recordAudit({
+    action: "UPDATE",
+    entityType: "Subscription",
+    entityId: subscription.id,
+    actorId: userId,
+    description: `Subscription cancelled — ${cancellationReasonLabel(input.reason)}${note ? `: ${note}` : ""}. Access runs to ${subscription.currentPeriodEnd?.toLocaleDateString("en-ZA") ?? "period end"}.`,
+    metadata: {
+      reason: input.reason,
+      note,
+      netcashCollectionMustBeStopped: true,
+      netcashRef: subscription.netcashAccountRef,
+    },
+    ipAddress: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+
+  // Tell the operator to stop the recurring collection at Netcash. Failing to
+  // do so takes money for a cancelled service, which invites chargebacks.
+  await notifyOperatorToStopCollection(userId, subscription.netcashAccountRef).catch(
+    (error) => console.error("[billing] Could not alert operator about cancellation:", error),
+  );
+
+  return { endsAt: subscription.currentPeriodEnd };
+}
+
+/** Undo a pending cancellation while the paid period is still running. */
+export async function resumeSubscription(
+  userId: string,
+  ctx: { ip?: string; userAgent?: string } = {},
+): Promise<void> {
+  const subscription = await prisma.subscription.findUnique({ where: { userId } });
+  if (!subscription || !subscription.cancelAtPeriodEnd) return;
+
+  await prisma.subscription.update({
+    where: { userId },
+    data: { cancelAtPeriodEnd: false, canceledAt: null },
+  });
+
+  await recordAudit({
+    action: "UPDATE",
+    entityType: "Subscription",
+    entityId: subscription.id,
+    actorId: userId,
+    description: "Subscription cancellation reversed — billing continues as normal.",
+    ipAddress: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+}
+
+/** Email platform admins so the Netcash recurring instruction gets stopped. */
+async function notifyOperatorToStopCollection(
+  userId: string,
+  netcashRef: string | null,
+): Promise<void> {
+  const [customer, admins] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } }),
+    prisma.user.findMany({
+      where: { role: "ADMIN", deletedAt: null, isActive: true },
+      select: { email: true },
+    }),
+  ]);
+  if (!customer || admins.length === 0) return;
+
+  const mail = subscriptionCancelledAdminEmail({
+    customerEmail: customer.email,
+    customerName: customer.name,
+    netcashRef,
+  });
+  await Promise.allSettled(
+    admins.map((admin) => sendEmail({ to: admin.email, ...mail })),
+  );
+}
+
+/**
+ * Close out subscriptions whose paid period has ended.
+ *
+ * A cancelled subscription lapses to CANCELED and reverts to free-plan limits
+ * the day after its period ends. A subscription that was NOT cancelled but has
+ * no fresh payment is only marked PAST_DUE — access is deliberately left intact,
+ * because a slow webhook or a bank delay should never lock a paying customer
+ * out of their own compliance records.
+ *
+ * Runs from the daily cron.
+ */
+export async function expireLapsedSubscriptions(
+  now = new Date(),
+): Promise<{ canceled: number; pastDue: number }> {
+  const freePlan = planById("FREE_TRIAL");
+
+  const lapsed = await prisma.subscription.findMany({
+    where: {
+      status: { in: ["ACTIVE", "PAST_DUE"] },
+      currentPeriodEnd: { lt: now },
+    },
+    select: { id: true, userId: true, cancelAtPeriodEnd: true, status: true },
+    take: 500,
+  });
+
+  let canceled = 0;
+  let pastDue = 0;
+
+  for (const sub of lapsed) {
+    if (sub.cancelAtPeriodEnd) {
+      await prisma.subscription.update({
+        where: { id: sub.id },
+        data: {
+          status: "CANCELED",
+          plan: "FREE_TRIAL",
+          employeeLimit: freePlan.employeeLimit,
+          payslipLimit: freePlan.payslipLimit,
+          priceZarCents: 0,
+        },
+      });
+      await recordAudit({
+        action: "UPDATE",
+        entityType: "Subscription",
+        entityId: sub.id,
+        actorId: sub.userId,
+        description: "Cancelled subscription reached the end of its paid period — reverted to the free plan.",
+      });
+      canceled += 1;
+    } else if (sub.status !== "PAST_DUE") {
+      // Renewal hasn't landed yet. Flag it, but keep their access.
+      await prisma.subscription.update({
+        where: { id: sub.id },
+        data: { status: "PAST_DUE" },
+      });
+      pastDue += 1;
+    }
+  }
+
+  return { canceled, pastDue };
+}
+
+/**
+ * Subscriptions the operator still has to stop at Netcash. Surfaced in the
+ * admin area so a cancellation can't quietly keep collecting money.
+ */
+export function listCancellationsNeedingAction() {
+  return prisma.subscription.findMany({
+    where: { cancelAtPeriodEnd: true, status: { in: ["ACTIVE", "PAST_DUE"] } },
+    orderBy: { canceledAt: "desc" },
+    take: 100,
+    include: { user: { select: { email: true, name: true } } },
+  });
 }
 
 /** Read the plan id stashed on the payment at checkout, with a safe default. */

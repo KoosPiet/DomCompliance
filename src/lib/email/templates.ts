@@ -69,6 +69,29 @@ export function passwordResetEmail(params: { name?: string | null; url: string }
 }
 
 /**
+ * Internal alert: a customer cancelled, so the recurring Pay Now collection
+ * must be stopped on the Netcash side too. Continuing to collect after a
+ * cancellation is what produces chargebacks, so this is deliberately blunt.
+ */
+export function subscriptionCancelledAdminEmail(params: {
+  customerEmail: string;
+  customerName?: string | null;
+  netcashRef?: string | null;
+}) {
+  const who = params.customerName
+    ? `${params.customerName} (${params.customerEmail})`
+    : params.customerEmail;
+  return {
+    subject: `Action needed: stop Netcash collection — ${params.customerEmail}`,
+    html: layout({
+      heading: "A subscription was cancelled",
+      body: `<p style="margin:0 0 12px;"><strong>${who}</strong> cancelled their LabourMate subscription.</p><p style="margin:0 0 12px;">Their access runs to the end of the period they already paid for. LabourMate has stopped renewing on its side, but the recurring instruction lives on the Netcash Pay Now service — <strong>stop the collection in Netcash</strong> or their card will be charged again.</p>${params.netcashRef ? `<p style="margin:0 0 12px;color:${MUTED};font-size:13px;">Netcash reference: ${params.netcashRef}</p>` : ""}<p style="margin:0;color:${MUTED};font-size:13px;">Netcash Console → Pay Now → recurring / subscriptions.</p>`,
+    }),
+    text: `${who} cancelled their LabourMate subscription. Stop the recurring collection in the Netcash console or their card will be charged again.${params.netcashRef ? ` Netcash reference: ${params.netcashRef}.` : ""}`,
+  };
+}
+
+/**
  * Single signup email: welcome + email confirmation in one message.
  *
  * Deliberately merged — sending a separate welcome and verification email
