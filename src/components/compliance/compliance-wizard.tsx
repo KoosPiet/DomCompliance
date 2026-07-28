@@ -279,12 +279,26 @@ function ResultView({
             {result.risks.map((risk) => (
               <li
                 key={risk.questionId}
-                className="rounded-lg border bg-card p-4"
+                className={`rounded-lg border bg-card p-4 ${
+                  risk.severity ? "border-danger/50 bg-danger/5" : ""
+                }`}
               >
                 <div className="flex items-start gap-3">
                   <X className="mt-0.5 size-4 shrink-0 text-danger" />
                   <div>
-                    <p className="text-sm font-medium">{risk.prompt}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">{risk.prompt}</p>
+                      {risk.severity === "criminal" && (
+                        <Badge variant="destructive" className="text-xs">
+                          Criminal offence
+                        </Badge>
+                      )}
+                      {risk.severity === "critical" && (
+                        <Badge variant="destructive" className="text-xs">
+                          Breaking the law
+                        </Badge>
+                      )}
+                    </div>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {risk.message}
                     </p>

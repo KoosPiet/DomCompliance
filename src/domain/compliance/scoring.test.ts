@@ -79,6 +79,49 @@ describe("compliance scoring", () => {
     expect(r.score).toBeLessThan(80);
   });
 
+  it("never shows green when a statutory requirement is broken", () => {
+    // Missing a contract used to score 80% and read as GREEN.
+    const r = evaluateCompliance({ ...fullyCompliant, hasContract: false });
+    expect(r.score).toBe(80);
+    expect(r.rating).not.toBe("GREEN");
+    expect(r.criticalRisks.map((x) => x.questionId)).toContain("hasContract");
+  });
+
+  it("caps the rating for an unregistered UIF employer", () => {
+    const r = evaluateCompliance({ ...fullyCompliant, registeredUif: false });
+    expect(r.rating).not.toBe("GREEN");
+  });
+
+  it("forces red when the gap carries criminal liability", () => {
+    const r = evaluateCompliance({
+      ...fullyCompliant,
+      isForeignNational: true,
+      hasValidWorkPermit: false,
+    });
+    // Otherwise-perfect compliance must not soften a criminal offence.
+    expect(r.rating).toBe("RED");
+    expect(r.headline).toMatch(/criminal offence/i);
+  });
+
+  it("lists the most serious gaps first", () => {
+    const r = evaluateCompliance({
+      ...fullyCompliant,
+      keepsSalaryRecords: false, // ordinary gap
+      hasContract: false, // critical
+      isForeignNational: true,
+      hasValidWorkPermit: false, // criminal
+    });
+    expect(r.risks[0].questionId).toBe("hasValidWorkPermit");
+    expect(r.risks[1].questionId).toBe("hasContract");
+    expect(r.risks.at(-1)?.questionId).toBe("keepsSalaryRecords");
+  });
+
+  it("keeps a clean sheet green", () => {
+    const r = evaluateCompliance({ ...fullyCompliant, isForeignNational: false });
+    expect(r.rating).toBe("GREEN");
+    expect(r.criticalRisks).toHaveLength(0);
+  });
+
   it("treats employing a foreign national as lawful in itself", () => {
     const withPermit = evaluateCompliance({
       ...fullyCompliant,

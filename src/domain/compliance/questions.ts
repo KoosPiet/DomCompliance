@@ -36,6 +36,18 @@ export interface ComplianceQuestion {
    * scored) for a South African worker.
    */
   dependsOn?: { id: ComplianceQuestionId; value: boolean };
+  /**
+   * How badly a "no" reflects on the employer, beyond the numeric weight.
+   *
+   *   "critical" — a direct statutory contravention. The result can never show
+   *                green, however good the rest of the answers are.
+   *   "criminal" — exposes the employer to criminal liability, not just a
+   *                penalty. Forces a red result outright.
+   *
+   * Weights alone were too forgiving: missing a written contract scored 80%
+   * and read as "green", which is the wrong message for an outright breach.
+   */
+  severity?: "critical" | "criminal";
   /** Risk message surfaced when the answer is "no". */
   riskIfNo: string;
   /** The relevant piece of legislation, for education. */
@@ -66,6 +78,7 @@ export const COMPLIANCE_QUESTIONS: ComplianceQuestion[] = [
     prompt: "Does the worker have a written employment contract?",
     helper: "A signed contract is legally required from day one of employment.",
     weight: 20,
+    severity: "critical",
     riskIfNo:
       "Employing without a written contract is a direct contravention of the BCEA and Sectoral Determination 7.",
     legislation: "BCEA s29 · Sectoral Determination 7",
@@ -75,6 +88,7 @@ export const COMPLIANCE_QUESTIONS: ComplianceQuestion[] = [
     prompt: "Are you registered for UIF as an employer?",
     helper: "Every domestic employer must register with the UIF within 14 days of hiring.",
     weight: 20,
+    severity: "critical",
     riskIfNo:
       "Failure to register for UIF can result in penalties, interest and back-payments to the Department of Employment and Labour.",
     legislation: "Unemployment Insurance Contributions Act, 2002",
@@ -142,6 +156,7 @@ export const COMPLIANCE_QUESTIONS: ComplianceQuestion[] = [
     helper:
       "You must see and keep a copy of it. A valid asylum seeker or refugee permit endorsed for work also counts.",
     weight: 30,
+    severity: "criminal",
     dependsOn: { id: "isForeignNational", value: true },
     riskIfNo:
       "Employing a foreign national without valid work authorisation is a criminal offence under the Immigration Act — the employer faces fines or imprisonment, and the worker risks deportation. Note that they still keep full BCEA rights (contract, minimum wage, leave, payslips) regardless of their status.",

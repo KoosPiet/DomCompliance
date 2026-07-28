@@ -15,6 +15,8 @@ export interface ComplianceRiskItem {
   prompt: string;
   message: string;
   legislation: string;
+  /** Present when this gap is a statutory contravention or criminal offence. */
+  severity?: "critical" | "criminal";
 }
 
 export interface ComplianceResult {
@@ -25,6 +27,8 @@ export interface ComplianceResult {
   notApplicable: boolean;
   /** The specific compliance gaps found (answered "no"). */
   risks: ComplianceRiskItem[];
+  /** The subset of `risks` that are statutory contraventions or offences. */
+  criticalRisks: ComplianceRiskItem[];
   /** Count of compliant answers out of the scored questions. */
   compliantCount: number;
   totalCount: number;
@@ -41,7 +45,18 @@ export function ratingForScore(score: number): ComplianceRating {
   return "RED";
 }
 
-function headlineFor(score: number, rating: ComplianceRating): string {
+function headlineFor(
+  score: number,
+  rating: ComplianceRating,
+  criticalRisks: ComplianceRiskItem[],
+): string {
+  // A criminal-liability gap outranks the arithmetic entirely.
+  if (criticalRisks.some((r) => r.severity === "criminal")) {
+    return "Urgent: one of your answers points to a criminal offence, not just a penalty. Please address it immediately.";
+  }
+  if (criticalRisks.length > 0) {
+    return `You scored ${score}%, but you're breaking a specific legal requirement — that needs fixing before anything else.`;
+  }
   if (rating === "GREEN") {
     return "You're in great shape. A few small steps will make you fully compliant.";
   }
@@ -65,6 +80,7 @@ export function evaluateCompliance(answers: ComplianceAnswers): ComplianceResult
       rating: "GREEN",
       notApplicable: true,
       risks: [],
+      criticalRisks: [],
       compliantCount: 0,
       totalCount: SCORED_QUESTIONS.length,
       headline:
@@ -94,22 +110,43 @@ export function evaluateCompliance(answers: ComplianceAnswers): ComplianceResult
         prompt: question.prompt,
         message: question.riskIfNo,
         legislation: question.legislation,
+        severity: question.severity,
       });
     }
   }
 
   const denominator = available || TOTAL_WEIGHT;
   const score = Math.round((earned / denominator) * 100);
-  const rating = ratingForScore(score);
+
+  // Weights alone let serious breaches hide behind otherwise-good answers — a
+  // missing contract still scored 80% and read as "green". A contravention now
+  // caps the rating regardless of the arithmetic, and criminal exposure forces
+  // red. The numeric score stays honest; only the verdict is adjusted.
+  // Show the legally serious gaps first — they're what needs fixing today.
+  const severityRank = { criminal: 0, critical: 1 } as const;
+  risks.sort(
+    (a, b) =>
+      (a.severity ? severityRank[a.severity] : 2) -
+      (b.severity ? severityRank[b.severity] : 2),
+  );
+
+  const criticalRisks = risks.filter((r) => r.severity);
+  let rating = ratingForScore(score);
+  if (criticalRisks.some((r) => r.severity === "criminal")) {
+    rating = "RED";
+  } else if (criticalRisks.length > 0 && rating === "GREEN") {
+    rating = "ORANGE";
+  }
 
   return {
     score,
     rating,
     notApplicable: false,
     risks,
+    criticalRisks,
     compliantCount,
     totalCount: applicable.length,
-    headline: headlineFor(score, rating),
+    headline: headlineFor(score, rating, criticalRisks),
   };
 }
 
