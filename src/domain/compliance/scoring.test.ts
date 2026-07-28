@@ -1,5 +1,42 @@
 import { describe, it, expect } from "vitest";
 import { evaluateCompliance, ratingForScore } from "@/domain/compliance/scoring";
+import { COMPLIANCE_QUESTIONS } from "@/domain/compliance/questions";
+import { complianceAnswersSchema } from "@/lib/validations/compliance";
+
+describe("compliance answers reach the scorer", () => {
+  // Zod strips unknown keys, so a question missing from the API schema is
+  // silently discarded and never scored — this once turned an unauthorised
+  // worker into a 100% result.
+  it("accepts an answer for every question in the check", () => {
+    const answers = Object.fromEntries(
+      COMPLIANCE_QUESTIONS.map((q) => [q.id, true]),
+    );
+    const parsed = complianceAnswersSchema.parse(answers);
+    for (const question of COMPLIANCE_QUESTIONS) {
+      expect(parsed, `"${question.id}" is dropped by the API schema`).toHaveProperty(
+        question.id,
+      );
+    }
+  });
+
+  it("scores an unauthorised foreign worker as red end-to-end", () => {
+    const parsed = complianceAnswersSchema.parse({
+      employsWorker: true,
+      hasContract: true,
+      issuesPayslips: true,
+      registeredUif: true,
+      submitsUif: true,
+      keepsLeaveRecords: true,
+      keepsSalaryRecords: true,
+      hasSignedDocuments: true,
+      isForeignNational: true,
+      hasValidWorkPermit: false,
+    });
+    const result = evaluateCompliance(parsed);
+    expect(result.score).toBe(77);
+    expect(result.rating).toBe("RED");
+  });
+});
 
 describe("compliance scoring", () => {
   it("marks not-applicable when no worker is employed", () => {
