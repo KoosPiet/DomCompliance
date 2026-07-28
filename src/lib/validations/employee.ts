@@ -76,6 +76,12 @@ export const employeeSchema = z.object({
   salary: money,
   payFrequency: z.enum(["MONTHLY", "FORTNIGHTLY", "WEEKLY"]),
   workingDaysPerWeek: z.enum(["1", "2", "3", "4", "5", "6", "7"]),
+  // Extra annual leave granted above the BCEA minimum ("non-statutory" leave).
+  extraAnnualLeaveDays: z
+    .string()
+    .trim()
+    .regex(/^\d{0,3}(\.\d{1,2})?$/, "Enter a number of days, e.g. 5 or 2.5")
+    .optional(),
   ordinaryHoursDay: z
     .string()
     .trim()
@@ -105,6 +111,7 @@ export const employeeFormDefaults: Partial<EmployeeInput> = {
   payFrequency: "MONTHLY",
   workingDaysPerWeek: "5",
   ordinaryHoursDay: "9",
+  extraAnnualLeaveDays: "0",
 };
 
 /** Human label for an occupation (falls back to the free-text "other" value). */

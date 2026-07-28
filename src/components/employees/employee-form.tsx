@@ -14,7 +14,10 @@ import {
   type EmployeeInput,
 } from "@/lib/validations/employee";
 import { SA_PROVINCES } from "@/lib/validations/employer";
-import { annualLeaveEntitlement } from "@/domain/leave/accrual";
+import {
+  annualLeaveEntitlement,
+  statutoryAnnualLeave,
+} from "@/domain/leave/accrual";
 import { LEAVE } from "@/domain/constants";
 import {
   createEmployeeAction,
@@ -50,6 +53,7 @@ const EMPTY: EmployeeInput = {
   payFrequency: "MONTHLY",
   workingDaysPerWeek: "5",
   ordinaryHoursDay: "9",
+  extraAnnualLeaveDays: "0",
   scheduleNote: "",
   bankName: "",
   bankAccountHolder: "",
@@ -118,10 +122,16 @@ export function EmployeeForm({
 
   const occupation = watch("occupation");
 
-  // Live statutory-leave preview, scaled to the chosen days-per-week (BCEA).
+  // Live leave preview, scaled to the chosen days-per-week (BCEA) plus any
+  // extra days the employer chooses to grant.
   const workingDaysPerWeek =
     Number.parseInt(watch("workingDaysPerWeek") ?? "5", 10) || 5;
-  const annualLeaveDays = annualLeaveEntitlement(workingDaysPerWeek);
+  const extraLeaveDays = Math.max(
+    0,
+    Number.parseFloat(watch("extraAnnualLeaveDays") || "0") || 0,
+  );
+  const statutoryAnnualDays = statutoryAnnualLeave(workingDaysPerWeek);
+  const annualLeaveDays = annualLeaveEntitlement(workingDaysPerWeek, extraLeaveDays);
   const sickLeaveDays = workingDaysPerWeek * LEAVE.SICK_WEEKS_PER_CYCLE;
   const familyResponsibilityEligible =
     workingDaysPerWeek >= LEAVE.FAMILY_RESPONSIBILITY_MIN_DAYS_PER_WEEK;
@@ -279,25 +289,42 @@ export function EmployeeForm({
           <Field name="ordinaryHoursDay" label="Ordinary hours / day">
             <Input {...register("ordinaryHoursDay")} inputMode="decimal" placeholder="9" />
           </Field>
-          <Field name="scheduleNote" label="Schedule note" optional className="sm:col-span-2">
+          <Field
+            name="extraAnnualLeaveDays"
+            label="Extra annual leave days"
+            optional
+          >
+            <Input
+              {...register("extraAnnualLeaveDays")}
+              inputMode="decimal"
+              placeholder="0"
+            />
+          </Field>
+          <Field name="scheduleNote" label="Schedule note" optional>
             <Input {...register("scheduleNote")} placeholder="e.g. Mon–Fri 08:00–17:00" />
           </Field>
         </div>
 
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
           <p className="text-sm font-medium">
-            Statutory leave for a {workingDaysPerWeek}-day week
+            Leave for a {workingDaysPerWeek}-day week
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Calculated automatically from the days above. The BCEA scales leave
             to how many days a week the worker actually works, so a part-time
-            worker earns proportionally less than a full-time one.
+            worker earns proportionally less than a full-time one. Use{" "}
+            <span className="font-medium">Extra annual leave days</span> to give
+            more than the legal minimum — you can never give less.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <LeaveStat
               label="Annual leave"
               value={`${annualLeaveDays} days`}
-              sub="per year"
+              sub={
+                extraLeaveDays > 0
+                  ? `${statutoryAnnualDays} statutory + ${extraLeaveDays} extra`
+                  : "per year (statutory minimum)"
+              }
             />
             <LeaveStat
               label="Sick leave"

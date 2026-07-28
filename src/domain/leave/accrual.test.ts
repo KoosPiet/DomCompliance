@@ -16,6 +16,33 @@ describe("leave accrual", () => {
     expect(annualLeaveEntitlement(6)).toBe(18);
   });
 
+  it("adds employer-granted extra days on top of the statutory minimum", () => {
+    // A 2-day-a-week worker gets 6 statutory days; the employer grants 15.
+    expect(annualLeaveEntitlement(2)).toBe(6);
+    expect(annualLeaveEntitlement(2, 9)).toBe(15);
+    // Extra days accrue pro-rata like statutory ones.
+    const start = new Date("2025-01-01");
+    const halfYear = annualLeaveAccrued(2, start, new Date("2025-07-01"), 9);
+    expect(halfYear).toBeGreaterThan(6);
+    expect(halfYear).toBeLessThan(9);
+    // Leave can never fall below the statutory floor.
+    expect(annualLeaveEntitlement(5, -10)).toBe(15);
+  });
+
+  it("reports the statutory and extra split separately", () => {
+    const summary = leaveEntitlementSummary({
+      workingDaysPerWeek: 5,
+      startDate: new Date("2024-01-01"),
+      cycleStart: new Date("2025-01-01"),
+      asOf: new Date("2025-12-31"),
+      extraAnnualLeaveDays: 5,
+    });
+    const annual = summary.find((s) => s.leaveType === "ANNUAL")!;
+    expect(annual.statutoryDays).toBe(15);
+    expect(annual.extraDays).toBe(5);
+    expect(annual.entitledDays).toBe(20);
+  });
+
   it("scales sick leave to a part-time schedule", () => {
     const start = new Date("2024-01-01");
     const after6m = new Date("2025-01-01");

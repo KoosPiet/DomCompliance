@@ -36,6 +36,10 @@ export interface LeaveBalanceView {
   accruedDays: number;
   takenDays: number;
   balanceDays: number;
+  /** BCEA minimum portion of the entitlement. */
+  statutoryDays: number;
+  /** Employer-granted days above the minimum (0 when none). */
+  extraDays: number;
 }
 
 export interface EmployeeLeaveOverview {
@@ -60,6 +64,7 @@ export async function getEmployeeLeaveOverview(
     startDate: employee.startDate,
     cycleStart,
     asOf: now,
+    extraAnnualLeaveDays: Number(employee.extraAnnualLeaveDays),
   });
 
   const requests = await prisma.leaveRequest.findMany({
@@ -85,6 +90,8 @@ export async function getEmployeeLeaveOverview(
       takenDays: round2(taken),
       // Deliberately allowed to go negative — an employer must see overdrawn leave.
       balanceDays: round2(base - taken),
+      statutoryDays: round2(s.statutoryDays),
+      extraDays: round2(s.extraDays),
     };
   });
 
@@ -119,8 +126,9 @@ export async function getLeaveOverview(userId: string): Promise<{
 
   const rows: LeaveOverviewRow[] = employees.map((employee) => {
     const cycleStart = annualCycleStart(employee.startDate, now);
-    const entitled = annualLeaveEntitlement(employee.workingDaysPerWeek);
-    const accrued = annualLeaveAccrued(employee.workingDaysPerWeek, cycleStart, now);
+    const extra = Number(employee.extraAnnualLeaveDays);
+    const entitled = annualLeaveEntitlement(employee.workingDaysPerWeek, extra);
+    const accrued = annualLeaveAccrued(employee.workingDaysPerWeek, cycleStart, now, extra);
     const taken = requests
       .filter((r) => r.employeeId === employee.id && r.leaveType === "ANNUAL" && r.startDate >= cycleStart)
       .reduce((sum, r) => sum + Number(r.days), 0);

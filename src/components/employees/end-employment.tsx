@@ -21,7 +21,9 @@ import {
 import {
   TERMINATION_REASONS,
   DISMISSAL_REASONS,
+  REINSTATEMENT_REASONS,
   type EndEmploymentInput,
+  type ReinstateInput,
 } from "@/lib/validations/employment";
 import {
   endEmploymentAction,
@@ -139,26 +141,87 @@ export function EndEmploymentButton({ id, name }: { id: string; name: string }) 
 
 export function ReinstateButton({ id, name }: { id: string; name: string }) {
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [reason, setReason] = useState<ReinstateInput["reason"]>("LOGGED_IN_ERROR");
+  const [note, setNote] = useState("");
+
+  const selected = REINSTATEMENT_REASONS.find((r) => r.value === reason);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    startTransition(async () => {
+      const res = await reinstateEmployeeAction(id, { reason, note });
+      if (res.ok) {
+        toast.success(`${name} is an active employee again.`);
+        setOpen(false);
+        router.refresh();
+      } else {
+        toast.error(res.message);
+      }
+    });
+  }
 
   return (
-    <Button
-      variant="outline"
-      disabled={pending}
-      onClick={() =>
-        startTransition(async () => {
-          const res = await reinstateEmployeeAction(id);
-          if (res.ok) {
-            toast.success(`${name} is active again.`);
-            router.refresh();
-          } else {
-            toast.error(res.message);
-          }
-        })
-      }
-    >
-      {pending ? <Loader2 className="size-4 animate-spin" /> : <Undo2 className="size-4" />}
-      Reinstate
-    </Button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline">
+          <Undo2 className="size-4" /> Reinstate
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Reinstate {name}</DialogTitle>
+          <DialogDescription>
+            This makes them an active employee again, so payslips and contracts
+            work as normal. The reason is kept in your activity log.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="reinstate-reason">Reason</Label>
+            <select
+              id="reinstate-reason"
+              className={selectClass}
+              value={reason}
+              onChange={(e) => setReason(e.target.value as ReinstateInput["reason"])}
+            >
+              {REINSTATEMENT_REASONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+            {selected?.hint && (
+              <p className="text-xs text-muted-foreground">{selected.hint}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="reinstate-note">
+              Notes{" "}
+              {reason === "OTHER" ? "" : <span className="text-muted-foreground">(optional)</span>}
+            </Label>
+            <Textarea
+              id="reinstate-note"
+              rows={2}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Anything worth recording for your files"
+            />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" disabled={pending}>
+              {pending ? <Loader2 className="size-4 animate-spin" /> : <Undo2 className="size-4" />}
+              Reinstate
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

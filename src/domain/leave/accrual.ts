@@ -11,26 +11,43 @@ export function monthsOfService(startDate: Date, asOf: Date): number {
 }
 
 /**
- * Annual-leave entitlement for a full cycle, scaled to the number of days
- * the employee works per week (BCEA: 21 consecutive days ≈ 15 working days
- * for a 5-day week).
+ * Statutory annual-leave entitlement for a full cycle, scaled to the number of
+ * days the employee works per week (BCEA: 21 consecutive days ≈ 15 working
+ * days for a 5-day week). This is the legal floor — an employer may grant more
+ * but never less.
  */
-export function annualLeaveEntitlement(workingDaysPerWeek: number): number {
+export function statutoryAnnualLeave(workingDaysPerWeek: number): number {
   const perFiveDayWeek = LEAVE.ANNUAL_DAYS_5_DAY_WEEK;
   const scaled = (perFiveDayWeek / 5) * workingDaysPerWeek;
   return Math.round(scaled * 100) / 100;
 }
 
 /**
+ * Total annual-leave entitlement: the statutory minimum plus any extra
+ * ("non-statutory") days the employer chooses to grant. Negative extras are
+ * ignored — leave can never fall below the BCEA floor.
+ */
+export function annualLeaveEntitlement(
+  workingDaysPerWeek: number,
+  extraDays = 0,
+): number {
+  const extra = Number.isFinite(extraDays) ? Math.max(0, extraDays) : 0;
+  return Math.round((statutoryAnnualLeave(workingDaysPerWeek) + extra) * 100) / 100;
+}
+
+/**
  * Annual leave accrued so far in the current cycle, pro-rated by months of
- * service within the cycle. Capped at the full entitlement.
+ * service within the cycle. Extra days accrue on the same basis as statutory
+ * ones, so a mid-cycle joiner doesn't receive a full year's allowance up front.
+ * Capped at the full entitlement.
  */
 export function annualLeaveAccrued(
   workingDaysPerWeek: number,
   cycleStart: Date,
   asOf: Date,
+  extraDays = 0,
 ): number {
-  const entitlement = annualLeaveEntitlement(workingDaysPerWeek);
+  const entitlement = annualLeaveEntitlement(workingDaysPerWeek, extraDays);
   const months = Math.min(12, Math.max(0, monthsOfService(cycleStart, asOf)));
   const accrued = (entitlement / 12) * months;
   return Math.min(entitlement, Math.round(accrued * 100) / 100);
@@ -73,6 +90,10 @@ export interface LeaveEntitlementSummary {
   leaveType: LeaveType;
   entitledDays: number;
   accruedDays: number;
+  /** The BCEA minimum portion of `entitledDays`. */
+  statutoryDays: number;
+  /** Extra days granted by the employer above the statutory minimum. */
+  extraDays: number;
 }
 
 /**
@@ -84,28 +105,45 @@ export function leaveEntitlementSummary(params: {
   startDate: Date;
   cycleStart: Date;
   asOf: Date;
+  /** Extra annual-leave days granted above the BCEA minimum. */
+  extraAnnualLeaveDays?: number;
 }): LeaveEntitlementSummary[] {
-  const { workingDaysPerWeek, startDate, cycleStart, asOf } = params;
+  const {
+    workingDaysPerWeek,
+    startDate,
+    cycleStart,
+    asOf,
+    extraAnnualLeaveDays = 0,
+  } = params;
+
+  const statutoryAnnual = statutoryAnnualLeave(workingDaysPerWeek);
+  const extraAnnual = Math.max(0, extraAnnualLeaveDays);
+  const sickDays = LEAVE.SICK_WEEKS_PER_CYCLE * workingDaysPerWeek;
+  const familyDays = qualifiesForFamilyResponsibility(workingDaysPerWeek, startDate, asOf)
+    ? LEAVE.FAMILY_RESPONSIBILITY_DAYS
+    : 0;
 
   return [
     {
       leaveType: LeaveType.ANNUAL,
-      entitledDays: annualLeaveEntitlement(workingDaysPerWeek),
-      accruedDays: annualLeaveAccrued(workingDaysPerWeek, cycleStart, asOf),
+      entitledDays: annualLeaveEntitlement(workingDaysPerWeek, extraAnnual),
+      accruedDays: annualLeaveAccrued(workingDaysPerWeek, cycleStart, asOf, extraAnnual),
+      statutoryDays: statutoryAnnual,
+      extraDays: extraAnnual,
     },
     {
       leaveType: LeaveType.SICK,
-      entitledDays: LEAVE.SICK_WEEKS_PER_CYCLE * workingDaysPerWeek,
+      entitledDays: sickDays,
       accruedDays: sickLeaveEntitlement(workingDaysPerWeek, startDate, asOf),
+      statutoryDays: sickDays,
+      extraDays: 0,
     },
     {
       leaveType: LeaveType.FAMILY_RESPONSIBILITY,
-      entitledDays: qualifiesForFamilyResponsibility(workingDaysPerWeek, startDate, asOf)
-        ? LEAVE.FAMILY_RESPONSIBILITY_DAYS
-        : 0,
-      accruedDays: qualifiesForFamilyResponsibility(workingDaysPerWeek, startDate, asOf)
-        ? LEAVE.FAMILY_RESPONSIBILITY_DAYS
-        : 0,
+      entitledDays: familyDays,
+      accruedDays: familyDays,
+      statutoryDays: familyDays,
+      extraDays: 0,
     },
   ];
 }

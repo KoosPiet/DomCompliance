@@ -330,6 +330,11 @@ export default async function EmployeeDetailPage({
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {b.takenDays} taken · {b.accruedDays} accrued
               </p>
+              {b.extraDays > 0 && (
+                <p className="mt-0.5 text-xs text-primary">
+                  {b.statutoryDays} statutory + {b.extraDays} extra
+                </p>
+              )}
             </div>
           ))}
         </div>

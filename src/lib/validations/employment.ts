@@ -55,6 +55,54 @@ export const DISMISSAL_REASONS = [
   "RETRENCHED",
 ] as const;
 
+/** Why someone is being put back on the books. */
+export const REINSTATEMENT_REASONS = [
+  {
+    value: "LOGGED_IN_ERROR",
+    label: "Logged in error",
+    hint: "The end of employment was recorded by mistake",
+  },
+  {
+    value: "RETURNED",
+    label: "Returned to work",
+    hint: "They came back after a break",
+  },
+  {
+    value: "REHIRED",
+    label: "Re-hired",
+    hint: "You employed them again under a new arrangement",
+  },
+  {
+    value: "DISPUTE_RESOLVED",
+    label: "Dispute resolved / reinstated",
+    hint: "Reinstated after a CCMA ruling or agreement",
+  },
+  { value: "OTHER", label: "Other", hint: "Add a short explanation below" },
+] as const;
+
+export function reinstatementReasonLabel(value?: string | null): string {
+  if (!value) return "—";
+  return REINSTATEMENT_REASONS.find((r) => r.value === value)?.label ?? value;
+}
+
+export const reinstateSchema = z
+  .object({
+    reason: z.enum([
+      "LOGGED_IN_ERROR",
+      "RETURNED",
+      "REHIRED",
+      "DISPUTE_RESOLVED",
+      "OTHER",
+    ]),
+    note: z.string().trim().max(500).optional(),
+  })
+  .refine((data) => data.reason !== "OTHER" || Boolean(data.note?.trim()), {
+    message: "Please explain why they're being reinstated",
+    path: ["note"],
+  });
+
+export type ReinstateInput = z.infer<typeof reinstateSchema>;
+
 export const endEmploymentSchema = z
   .object({
     reason: z.enum([

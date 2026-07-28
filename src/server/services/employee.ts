@@ -5,7 +5,9 @@ import { recordAudit } from "@/server/audit";
 import type { EmployeeInput } from "@/lib/validations/employee";
 import {
   terminationReasonLabel,
+  reinstatementReasonLabel,
   type EndEmploymentInput,
+  type ReinstateInput,
 } from "@/lib/validations/employment";
 
 export class EmployeeError extends Error {
@@ -72,6 +74,7 @@ function toPersistenceData(input: EmployeeInput): Prisma.EmployeeCreateWithoutUs
     salary: input.salary,
     payFrequency: input.payFrequency,
     workingDaysPerWeek: Number.parseInt(input.workingDaysPerWeek, 10),
+    extraAnnualLeaveDays: input.extraAnnualLeaveDays?.trim() || "0",
     ordinaryHoursDay: input.ordinaryHoursDay,
     scheduleNote: clean(input.scheduleNote),
     bankName: clean(input.bankName),
@@ -172,6 +175,7 @@ export function toFormValues(employee: Employee): EmployeeInput {
     salary: employee.salary.toString(),
     payFrequency: employee.payFrequency,
     workingDaysPerWeek: String(employee.workingDaysPerWeek) as EmployeeInput["workingDaysPerWeek"],
+    extraAnnualLeaveDays: String(Number(employee.extraAnnualLeaveDays)),
     ordinaryHoursDay: employee.ordinaryHoursDay.toString(),
     scheduleNote: employee.scheduleNote ?? "",
     bankName: employee.bankName ?? "",
@@ -282,10 +286,16 @@ export async function endEmployment(
   });
 }
 
-/** Undo an end-of-employment (e.g. logged in error, or they came back). */
+/**
+ * Undo an end-of-employment (logged in error, they returned, re-hired, or a
+ * dispute was resolved). The reason is captured in the audit log rather than on
+ * the employee record: reinstatement is an event in their history, not part of
+ * their current state.
+ */
 export async function reinstateEmployee(
   userId: string,
   id: string,
+  input: ReinstateInput,
   ctx: Ctx = {},
 ): Promise<void> {
   const employee = await getEmployee(userId, id);
@@ -300,12 +310,19 @@ export async function reinstateEmployee(
     },
   });
 
+  const note = clean(input.note);
   await recordAudit({
     action: "RESTORE",
     entityType: "Employee",
     entityId: id,
     actorId: userId,
-    description: `Reinstated ${employee.firstName} ${employee.lastName} as an active employee`,
+    description: `Reinstated ${employee.firstName} ${employee.lastName} — ${reinstatementReasonLabel(input.reason)}${note ? `: ${note}` : ""}`,
+    before: {
+      status: employee.status,
+      endDate: employee.endDate?.toISOString() ?? null,
+      terminationReason: employee.terminationReason,
+    },
+    after: { status: "ACTIVE", reason: input.reason, note },
     ipAddress: ctx.ip,
     userAgent: ctx.userAgent,
   });

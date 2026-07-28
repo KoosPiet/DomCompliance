@@ -18,7 +18,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { COMPLIANCE_QUESTIONS } from "@/domain/compliance/questions";
+import {
+  COMPLIANCE_QUESTIONS,
+  isQuestionApplicable,
+} from "@/domain/compliance/questions";
 import type { ComplianceQuestionId } from "@/domain/compliance/questions";
 import type { ComplianceResult } from "@/domain/compliance/scoring";
 import { registerSchema, type RegisterInput } from "@/lib/validations/auth";
@@ -35,8 +38,6 @@ import { Badge } from "@/components/ui/badge";
 type Answers = Partial<Record<ComplianceQuestionId, boolean>>;
 type Phase = "questions" | "loading" | "result";
 
-const TOTAL = COMPLIANCE_QUESTIONS.length;
-
 export function ComplianceWizard({
   isAuthenticated = false,
 }: {
@@ -48,7 +49,15 @@ export function ComplianceWizard({
   const [result, setResult] = useState<ComplianceResult | null>(null);
   const [assessmentId, setAssessmentId] = useState<string | null>(null);
 
-  const question = COMPLIANCE_QUESTIONS[index];
+  // Questions can be conditional (e.g. the work-permit question only applies to
+  // foreign nationals), so the visible list is derived from the answers so far.
+  // A dependency is always answered before the question that depends on it, so
+  // this list only ever grows ahead of the current index.
+  const visibleQuestions = COMPLIANCE_QUESTIONS.filter((q) =>
+    isQuestionApplicable(q, answers),
+  );
+  const TOTAL = visibleQuestions.length;
+  const question = visibleQuestions[Math.min(index, TOTAL - 1)];
 
   async function submit(finalAnswers: Answers) {
     setPhase("loading");
@@ -78,7 +87,12 @@ export function ComplianceWizard({
       void submit(next);
       return;
     }
-    if (index + 1 >= TOTAL) {
+    // Recompute against the new answers: this reply may have revealed or
+    // hidden a conditional question.
+    const nextVisible = COMPLIANCE_QUESTIONS.filter((q) =>
+      isQuestionApplicable(q, next),
+    );
+    if (index + 1 >= nextVisible.length) {
       void submit(next);
       return;
     }

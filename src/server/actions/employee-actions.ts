@@ -7,7 +7,9 @@ import { getRequestContext } from "@/lib/request";
 import { employeeSchema, type EmployeeInput } from "@/lib/validations/employee";
 import {
   endEmploymentSchema,
+  reinstateSchema,
   type EndEmploymentInput,
+  type ReinstateInput,
 } from "@/lib/validations/employment";
 import {
   createEmployee,
@@ -117,13 +119,23 @@ export async function endEmploymentAction(
 
 export async function reinstateEmployeeAction(
   id: string,
+  input: ReinstateInput,
 ): Promise<EmployeeActionResult> {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
+  const parsed = reinstateSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "Please check the highlighted fields.",
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    };
+  }
+
   const ctx = await getRequestContext();
   try {
-    await reinstateEmployee(session.user.id, id, ctx);
+    await reinstateEmployee(session.user.id, id, parsed.data, ctx);
   } catch (e) {
     if (e instanceof EmployeeError) return { ok: false, message: e.message };
     throw e;

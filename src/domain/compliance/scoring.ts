@@ -2,6 +2,7 @@ import {
   COMPLIANCE_QUESTIONS,
   SCORED_QUESTIONS,
   TOTAL_WEIGHT,
+  isQuestionApplicable,
   type ComplianceQuestionId,
 } from "@/domain/compliance/questions";
 
@@ -72,10 +73,17 @@ export function evaluateCompliance(answers: ComplianceAnswers): ComplianceResult
   }
 
   let earned = 0;
+  let available = 0;
   const risks: ComplianceRiskItem[] = [];
   let compliantCount = 0;
 
-  for (const question of SCORED_QUESTIONS) {
+  // Only questions that actually apply count toward the score. A conditional
+  // question (e.g. the work permit) must not drag down an employer it was
+  // never asked of.
+  const applicable = SCORED_QUESTIONS.filter((q) => isQuestionApplicable(q, answers));
+
+  for (const question of applicable) {
+    available += question.weight;
     const answer = answers[question.id] ?? false;
     if (answer) {
       earned += question.weight;
@@ -90,7 +98,8 @@ export function evaluateCompliance(answers: ComplianceAnswers): ComplianceResult
     }
   }
 
-  const score = Math.round((earned / TOTAL_WEIGHT) * 100);
+  const denominator = available || TOTAL_WEIGHT;
+  const score = Math.round((earned / denominator) * 100);
   const rating = ratingForScore(score);
 
   return {
@@ -99,7 +108,7 @@ export function evaluateCompliance(answers: ComplianceAnswers): ComplianceResult
     notApplicable: false,
     risks,
     compliantCount,
-    totalCount: SCORED_QUESTIONS.length,
+    totalCount: applicable.length,
     headline: headlineFor(score, rating),
   };
 }

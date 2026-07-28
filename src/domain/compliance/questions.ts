@@ -16,7 +16,9 @@ export type ComplianceQuestionId =
   | "submitsUif"
   | "keepsLeaveRecords"
   | "keepsSalaryRecords"
-  | "hasSignedDocuments";
+  | "hasSignedDocuments"
+  | "isForeignNational"
+  | "hasValidWorkPermit";
 
 export interface ComplianceQuestion {
   id: ComplianceQuestionId;
@@ -24,14 +26,29 @@ export interface ComplianceQuestion {
   prompt: string;
   /** Short helper text explaining why it matters. */
   helper: string;
-  /** Weight toward the score (0 for the gating question). */
+  /** Weight toward the score (0 for routing questions that aren't scored). */
   weight: number;
   /** Whether this is the gating "do you employ" question. */
   gating?: boolean;
+  /**
+   * Only ask this question when another answer matches. Used for the foreign
+   * national branch: the work-permit question is meaningless (and unfairly
+   * scored) for a South African worker.
+   */
+  dependsOn?: { id: ComplianceQuestionId; value: boolean };
   /** Risk message surfaced when the answer is "no". */
   riskIfNo: string;
   /** The relevant piece of legislation, for education. */
   legislation: string;
+}
+
+/** Whether a question applies, given the answers so far. */
+export function isQuestionApplicable(
+  question: ComplianceQuestion,
+  answers: Partial<Record<ComplianceQuestionId, boolean>>,
+): boolean {
+  if (!question.dependsOn) return true;
+  return answers[question.dependsOn.id] === question.dependsOn.value;
 }
 
 export const COMPLIANCE_QUESTIONS: ComplianceQuestion[] = [
@@ -107,10 +124,43 @@ export const COMPLIANCE_QUESTIONS: ComplianceQuestion[] = [
       "Unsigned or missing documents weaken your position in any dismissal or CCMA proceeding.",
     legislation: "LRA · BCEA record-keeping",
   },
+  {
+    id: "isForeignNational",
+    prompt: "Is your worker a foreign national?",
+    helper:
+      "Someone who is not a South African citizen or permanent resident. This routes the next question — it is not scored either way.",
+    // Routing only: employing a foreign national is perfectly lawful, so this
+    // answer must never move the score by itself.
+    weight: 0,
+    riskIfNo: "",
+    legislation: "Immigration Act, 2002",
+  },
+  {
+    id: "hasValidWorkPermit",
+    prompt:
+      "Do they hold a valid work visa, permit or asylum document that allows them to work?",
+    helper:
+      "You must see and keep a copy of it. A valid asylum seeker or refugee permit endorsed for work also counts.",
+    weight: 30,
+    dependsOn: { id: "isForeignNational", value: true },
+    riskIfNo:
+      "Employing a foreign national without valid work authorisation is a criminal offence under the Immigration Act — the employer faces fines or imprisonment, and the worker risks deportation. Note that they still keep full BCEA rights (contract, minimum wage, leave, payslips) regardless of their status.",
+    legislation: "Immigration Act 13 of 2002, s38",
+  },
 ];
 
-/** Questions that contribute to the score (everything except the gate). */
-export const SCORED_QUESTIONS = COMPLIANCE_QUESTIONS.filter((q) => !q.gating);
+/** Questions that can contribute to the score (everything except the gate). */
+export const SCORED_QUESTIONS = COMPLIANCE_QUESTIONS.filter(
+  (q) => !q.gating && q.weight > 0,
+);
 
-/** Total available weight — should equal 100. */
-export const TOTAL_WEIGHT = SCORED_QUESTIONS.reduce((sum, q) => sum + q.weight, 0);
+/**
+ * Baseline available weight — the questions everyone is asked. Equals 100, so
+ * a South African-worker employer scores out of 100 exactly as before.
+ * Conditional questions (e.g. work permit) add to the denominator only when
+ * they actually apply, which is handled in `evaluateCompliance`.
+ */
+export const TOTAL_WEIGHT = SCORED_QUESTIONS.filter((q) => !q.dependsOn).reduce(
+  (sum, q) => sum + q.weight,
+  0,
+);
