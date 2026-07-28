@@ -7,6 +7,7 @@ import {
   Download,
   FileSignature,
   TriangleAlert,
+  UserMinus,
 } from "lucide-react";
 import { auth } from "@/auth";
 import { buildMetadata } from "@/lib/seo";
@@ -54,7 +55,7 @@ export default async function ContractPage({
     throw e;
   }
 
-  const { contract, terms } = view;
+  const { contract, terms, employeeHasLeft } = view;
   const isSigned = contract.status === "SIGNED";
 
   return (
@@ -133,6 +134,23 @@ export default async function ContractPage({
             </p>
             <Button asChild variant="link" className="mt-1 h-auto p-0">
               <Link href="/vault">Open Document Vault →</Link>
+            </Button>
+          </div>
+        </div>
+      ) : employeeHasLeft ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 p-6">
+          <UserMinus className="mt-0.5 size-5 shrink-0 text-danger" />
+          <div>
+            <p className="font-semibold">Employment has ended</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              This contract can no longer be signed or changed, because{" "}
+              {view.employeeName} no longer works for you. It stays here as a
+              record. If this was a mistake, reinstate them on their profile.
+            </p>
+            <Button asChild variant="link" className="mt-1 h-auto p-0">
+              <Link href={`/employees/${contract.employeeId}`}>
+                Open employee profile →
+              </Link>
             </Button>
           </div>
         </div>

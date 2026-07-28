@@ -1,13 +1,20 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getRequestContext } from "@/lib/request";
 import { employeeSchema, type EmployeeInput } from "@/lib/validations/employee";
 import {
+  endEmploymentSchema,
+  type EndEmploymentInput,
+} from "@/lib/validations/employment";
+import {
   createEmployee,
   updateEmployee,
   softDeleteEmployee,
+  endEmployment,
+  reinstateEmployee,
   EmployeeError,
 } from "@/server/services/employee";
 
@@ -77,6 +84,54 @@ export async function updateEmployeeAction(
   }
 
   redirect(`/employees/${id}`);
+}
+
+export async function endEmploymentAction(
+  id: string,
+  input: EndEmploymentInput,
+): Promise<EmployeeActionResult> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const parsed = endEmploymentSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "Please check the highlighted fields.",
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    };
+  }
+
+  const ctx = await getRequestContext();
+  try {
+    await endEmployment(session.user.id, id, parsed.data, ctx);
+  } catch (e) {
+    if (e instanceof EmployeeError) return { ok: false, message: e.message };
+    throw e;
+  }
+
+  revalidatePath(`/employees/${id}`);
+  revalidatePath("/employees");
+  return { ok: true };
+}
+
+export async function reinstateEmployeeAction(
+  id: string,
+): Promise<EmployeeActionResult> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const ctx = await getRequestContext();
+  try {
+    await reinstateEmployee(session.user.id, id, ctx);
+  } catch (e) {
+    if (e instanceof EmployeeError) return { ok: false, message: e.message };
+    throw e;
+  }
+
+  revalidatePath(`/employees/${id}`);
+  revalidatePath("/employees");
+  return { ok: true };
 }
 
 export async function deleteEmployeeAction(id: string): Promise<void> {

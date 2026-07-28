@@ -10,6 +10,7 @@ import {
   Plus,
   ReceiptText,
   Download,
+  UserMinus,
 } from "lucide-react";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -28,6 +29,11 @@ import { generateContractAction } from "@/server/actions/contract-actions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DeleteEmployeeButton } from "@/components/employees/delete-employee-button";
+import {
+  EndEmploymentButton,
+  ReinstateButton,
+} from "@/components/employees/end-employment";
+import { terminationReasonLabel } from "@/lib/validations/employment";
 import { UploadDocument } from "@/components/vault/upload-document";
 import { DeleteContractButton } from "@/components/contracts/delete-contract-button";
 
@@ -101,6 +107,8 @@ export default async function EmployeeDetailPage({
   ]);
 
   const generateContract = generateContractAction.bind(null, id);
+  // Once employment has ended, nothing new may be issued in their name.
+  const hasEmployeeLeft = employee.status === "TERMINATED";
 
   return (
     <div className="space-y-6">
@@ -117,26 +125,60 @@ export default async function EmployeeDetailPage({
             </h1>
             <p className="mt-1 text-muted-foreground">
               {occupationLabel(employee.occupation, employee.otherOccupation)} ·{" "}
-              <Badge variant="secondary" className="align-middle">
+              <Badge
+                variant={hasEmployeeLeft ? "destructive" : "secondary"}
+                className="align-middle"
+              >
                 {employee.status.replace("_", " ").toLowerCase()}
               </Badge>
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <form action={generateContract}>
-              <Button type="submit">
-                <FileSignature className="size-4" /> Generate contract
-              </Button>
-            </form>
+            {!hasEmployeeLeft && (
+              <form action={generateContract}>
+                <Button type="submit">
+                  <FileSignature className="size-4" /> Generate contract
+                </Button>
+              </form>
+            )}
             <Button asChild variant="outline">
               <Link href={`/employees/${id}/edit`}>
                 <Pencil className="size-4" /> Edit
               </Link>
             </Button>
+            {hasEmployeeLeft ? (
+              <ReinstateButton id={id} name={employee.firstName} />
+            ) : (
+              <EndEmploymentButton
+                id={id}
+                name={`${employee.firstName} ${employee.lastName}`}
+              />
+            )}
             <DeleteEmployeeButton id={id} name={`${employee.firstName} ${employee.lastName}`} />
           </div>
         </div>
       </div>
+
+      {hasEmployeeLeft && (
+        <div className="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 p-4">
+          <UserMinus className="mt-0.5 size-5 shrink-0 text-danger" />
+          <div className="text-sm">
+            <p className="font-medium">
+              No longer employed — {terminationReasonLabel(employee.terminationReason)}
+              {employee.endDate
+                ? ` · last day ${employee.endDate.toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" })}`
+                : ""}
+            </p>
+            {employee.terminationNote && (
+              <p className="mt-1 text-muted-foreground">{employee.terminationNote}</p>
+            )}
+            <p className="mt-1 text-muted-foreground">
+              New payslips and contracts are disabled. Existing records remain
+              available — keep them for three years, as the BCEA requires.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="Personal">
@@ -241,11 +283,13 @@ export default async function EmployeeDetailPage({
       <div className="rounded-2xl border bg-card p-5">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Payslips</h2>
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/payslips/new?employeeId=${id}`}>
-              <Plus className="size-4" /> New payslip
-            </Link>
-          </Button>
+          {!hasEmployeeLeft && (
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/payslips/new?employeeId=${id}`}>
+                <Plus className="size-4" /> New payslip
+              </Link>
+            </Button>
+          )}
         </div>
         {payslips.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">

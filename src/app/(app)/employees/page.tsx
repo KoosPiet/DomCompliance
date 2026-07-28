@@ -15,11 +15,15 @@ export const metadata = buildMetadata({
   noIndex: true,
 });
 
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
+const STATUS_VARIANT: Record<
+  string,
+  "default" | "secondary" | "outline" | "destructive"
+> = {
   ACTIVE: "default",
   ON_LEAVE: "secondary",
   SUSPENDED: "outline",
-  TERMINATED: "outline",
+  // Stands out so an ex-employee is never mistaken for a current one.
+  TERMINATED: "destructive",
 };
 
 export default async function EmployeesPage() {

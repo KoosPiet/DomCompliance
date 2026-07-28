@@ -65,6 +65,21 @@ enum EmploymentStatus {
   TERMINATED
 }
 
+// Why employment ended. Mirrors the reason categories a SA employer must be
+// able to justify (BCEA/LRA) and declare on a UI-19 for UIF purposes.
+enum TerminationReason {
+  RESIGNED
+  DISMISSED_MISCONDUCT
+  DISMISSED_POOR_PERFORMANCE
+  RETRENCHED
+  CONTRACT_ENDED
+  RETIRED
+  ABSCONDED
+  DECEASED
+  MUTUAL_AGREEMENT
+  OTHER
+}
+
 enum PayFrequency {
   MONTHLY
   FORTNIGHTLY
@@ -387,6 +402,10 @@ model Employee {
   status          EmploymentStatus @default(ACTIVE)
   startDate       DateTime
   endDate         DateTime?
+
+  // Set together with status = TERMINATED when employment ends.
+  terminationReason TerminationReason?
+  terminationNote   String?
 
   // Remuneration
   salary       Decimal      @db.Decimal(12, 2)

@@ -3,7 +3,11 @@ import { customAlphabet } from "nanoid";
 import type { EmploymentContract, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { recordAudit } from "@/server/audit";
-import { getEmployee, decryptEmployeePii } from "@/server/services/employee";
+import {
+  getEmployee,
+  decryptEmployeePii,
+  assertStillEmployed,
+} from "@/server/services/employee";
 import { occupationLabel } from "@/lib/validations/employee";
 import {
   buildContractTerms,
@@ -46,6 +50,7 @@ export async function generateContract(
   ctx: Ctx = {},
 ): Promise<string> {
   const employee = await getEmployee(userId, employeeId); // throws if not owned
+  assertStillEmployed(employee, "create a new contract for them");
   const pii = decryptEmployeePii(employee);
 
   const [profile, user] = await Promise.all([
@@ -124,12 +129,16 @@ export interface ContractView {
   contract: EmploymentContract;
   terms: ContractTerms;
   employeeName: string;
+  /** True when the employee has left — the contract becomes read-only. */
+  employeeHasLeft: boolean;
 }
 
 export async function getContractView(userId: string, id: string): Promise<ContractView> {
   const contract = await prisma.employmentContract.findFirst({
     where: { id, userId, deletedAt: null },
-    include: { employee: { select: { firstName: true, lastName: true } } },
+    include: {
+      employee: { select: { firstName: true, lastName: true, status: true } },
+    },
   });
   if (!contract) throw new ContractError("NOT_FOUND", "Contract not found.");
 
@@ -137,6 +146,7 @@ export async function getContractView(userId: string, id: string): Promise<Contr
     contract,
     terms: contract.terms as unknown as ContractTerms,
     employeeName: `${contract.employee.firstName} ${contract.employee.lastName}`,
+    employeeHasLeft: contract.employee.status === "TERMINATED",
   };
 }
 
@@ -232,12 +242,18 @@ export async function signContract(
 ): Promise<void> {
   const existing = await prisma.employmentContract.findFirst({
     where: { id, userId, deletedAt: null },
-    include: { employee: { select: { firstName: true, lastName: true, occupation: true } } },
+    include: {
+      employee: {
+        select: { firstName: true, lastName: true, occupation: true, status: true },
+      },
+    },
   });
   if (!existing) throw new ContractError("NOT_FOUND", "Contract not found.");
   if (existing.status === "SIGNED") {
     throw new ContractError("ALREADY_SIGNED", "This contract is already signed.");
   }
+  // A contract can't be brought into force for someone who has already left.
+  assertStillEmployed(existing.employee, "sign their contract");
 
   const signedAt = new Date();
 

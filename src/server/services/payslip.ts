@@ -4,7 +4,7 @@ import type { Employee, EmployerProfile, Payslip, User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { recordAudit } from "@/server/audit";
 import { decryptPii, maskTail } from "@/lib/crypto/pii";
-import { getEmployee } from "@/server/services/employee";
+import { getEmployee, assertStillEmployed } from "@/server/services/employee";
 import { occupationLabel } from "@/lib/validations/employee";
 import { monthLabel, toAmount, type PayslipInput } from "@/lib/validations/payslip";
 import { calculatePayslip } from "@/domain/payroll/payslip";
@@ -116,6 +116,7 @@ export async function createPayslip(
   ctx: Ctx = {},
 ): Promise<string> {
   const employee = await getEmployee(userId, input.employeeId); // ownership + not deleted
+  assertStillEmployed(employee, "generate a payslip for them");
 
   const month = Number(input.periodMonth);
   const year = Number(input.periodYear);
@@ -248,6 +249,7 @@ export async function updatePayslip(
   if (!existing) throw new PayslipError("NOT_FOUND", "Payslip not found.");
 
   const employee = await getEmployee(userId, input.employeeId);
+  assertStillEmployed(employee, "edit their payslips");
   const month = Number(input.periodMonth);
   const year = Number(input.periodYear);
 

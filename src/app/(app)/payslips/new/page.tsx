@@ -28,11 +28,14 @@ export default async function NewPayslipPage({
     getPayslipAllowance(session.user.id),
   ]);
 
-  const options = employees.map((e) => ({
-    id: e.id,
-    name: `${e.firstName} ${e.lastName}`,
-    salary: e.salary.toString(),
-  }));
+  // Ex-employees can't be issued new payslips, so keep them out of the picker.
+  const options = employees
+    .filter((e) => e.status !== "TERMINATED")
+    .map((e) => ({
+      id: e.id,
+      name: `${e.firstName} ${e.lastName}`,
+      salary: e.salary.toString(),
+    }));
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">

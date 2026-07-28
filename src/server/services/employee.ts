@@ -1,16 +1,42 @@
-import type { Employee, Prisma } from "@prisma/client";
+import type { Employee, Prisma, TerminationReason } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { encryptPii, decryptPii, maskTail } from "@/lib/crypto/pii";
 import { recordAudit } from "@/server/audit";
 import type { EmployeeInput } from "@/lib/validations/employee";
+import {
+  terminationReasonLabel,
+  type EndEmploymentInput,
+} from "@/lib/validations/employment";
 
 export class EmployeeError extends Error {
   constructor(
-    public readonly code: "PLAN_LIMIT" | "NOT_FOUND",
+    public readonly code: "PLAN_LIMIT" | "NOT_FOUND" | "NOT_EMPLOYED",
     message: string,
   ) {
     super(message);
     this.name = "EmployeeError";
+  }
+}
+
+/** True once employment has formally ended. */
+export function hasLeft(employee: Pick<Employee, "status">): boolean {
+  return employee.status === "TERMINATED";
+}
+
+/**
+ * Guard for anything that creates *new* employment records — payslips and
+ * contracts. Once someone has left, the historical record stays readable and
+ * downloadable, but nothing new may be issued in their name.
+ */
+export function assertStillEmployed(
+  employee: Pick<Employee, "status" | "firstName" | "lastName">,
+  action: string,
+): void {
+  if (hasLeft(employee)) {
+    throw new EmployeeError(
+      "NOT_EMPLOYED",
+      `${employee.firstName} ${employee.lastName} no longer works for you, so you can't ${action}. Reinstate them first if this was a mistake.`,
+    );
   }
 }
 
@@ -209,6 +235,77 @@ export async function updateEmployee(
     entityId: id,
     actorId: userId,
     description: `Updated employee ${input.firstName} ${input.lastName}`,
+    ipAddress: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+}
+
+/**
+ * End employment: records the reason and last working day, and flips the
+ * employee to TERMINATED — which blocks new payslips and contracts. Existing
+ * records are deliberately left intact; an employer must keep them for three
+ * years under the BCEA.
+ */
+export async function endEmployment(
+  userId: string,
+  id: string,
+  input: EndEmploymentInput,
+  ctx: Ctx = {},
+): Promise<void> {
+  const employee = await getEmployee(userId, id);
+
+  await prisma.employee.update({
+    where: { id },
+    data: {
+      status: "TERMINATED",
+      endDate: new Date(input.endDate),
+      terminationReason: input.reason as TerminationReason,
+      terminationNote: clean(input.note),
+    },
+  });
+
+  await recordAudit({
+    action: "UPDATE",
+    entityType: "Employee",
+    entityId: id,
+    actorId: userId,
+    description: `Ended employment for ${employee.firstName} ${employee.lastName} — ${terminationReasonLabel(input.reason)}`,
+    before: { status: employee.status, endDate: employee.endDate?.toISOString() ?? null },
+    after: {
+      status: "TERMINATED",
+      endDate: input.endDate,
+      reason: input.reason,
+      note: input.note ?? null,
+    },
+    ipAddress: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+}
+
+/** Undo an end-of-employment (e.g. logged in error, or they came back). */
+export async function reinstateEmployee(
+  userId: string,
+  id: string,
+  ctx: Ctx = {},
+): Promise<void> {
+  const employee = await getEmployee(userId, id);
+
+  await prisma.employee.update({
+    where: { id },
+    data: {
+      status: "ACTIVE",
+      endDate: null,
+      terminationReason: null,
+      terminationNote: null,
+    },
+  });
+
+  await recordAudit({
+    action: "RESTORE",
+    entityType: "Employee",
+    entityId: id,
+    actorId: userId,
+    description: `Reinstated ${employee.firstName} ${employee.lastName} as an active employee`,
     ipAddress: ctx.ip,
     userAgent: ctx.userAgent,
   });
